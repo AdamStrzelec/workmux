@@ -220,6 +220,8 @@ pub struct AddWorktreeState {
     pub base_filter: String,
     /// Tab prefix for base branch cycling.
     pub base_tab_prefix: Option<String>,
+    /// Cursor in the base branch picker list (index into `base_filtered()`).
+    pub base_cursor: usize,
     pub repo_path: PathBuf,
     /// Current mode: Branch picker or PR list.
     pub mode: AddWorktreeMode,
@@ -290,6 +292,14 @@ pub enum AddWorktreeJob {
     },
 }
 
+/// Trim the typed name and replace inner whitespace with `_` (git rejects spaces in refs).
+pub fn sanitize_branch_name(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .map(|c| if c.is_whitespace() { '_' } else { c })
+        .collect()
+}
+
 /// Fuzzy subsequence match: every character in `query` must appear in `target` in order.
 /// "mergefail" matches "merge-fail-delete" because m-e-r-g-e-f-a-i-l appear in sequence.
 pub fn fuzzy_match(query: &str, target: &str) -> bool {
@@ -331,6 +341,27 @@ impl AddWorktreeState {
         }
         available.extend(occupied);
         available
+    }
+
+    /// Return indices into `branches` matching the base branch filter.
+    pub fn base_filtered(&self) -> Vec<usize> {
+        let text = self.base_tab_prefix.as_deref().unwrap_or(&self.base_filter);
+        let lower = text.trim().to_lowercase();
+        self.branches
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| lower.is_empty() || fuzzy_match(&lower, &b.to_lowercase()))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Branch the base picker would pick on Enter: highlighted entry, else typed text.
+    pub fn base_selection(&self) -> Option<String> {
+        if let Some(&idx) = self.base_filtered().get(self.base_cursor) {
+            return Some(self.branches[idx].clone());
+        }
+        let text = self.base_filter.trim();
+        (!text.is_empty()).then(|| text.to_string())
     }
 
     /// Number of selectable (non-occupied) entries in `filtered()`.
@@ -685,5 +716,51 @@ mod removal_tests {
         state.filter_snapshot(&mut snapshot);
         assert_eq!(snapshot.len(), 1);
         assert!(!state.contains(&snapshot[0].path));
+    }
+}
+
+#[cfg(test)]
+mod base_picker_tests {
+    use super::*;
+
+    fn state(branches: &[&str]) -> AddWorktreeState {
+        AddWorktreeState {
+            branches: branches.iter().map(|b| b.to_string()).collect(),
+            occupied_branches: Default::default(),
+            cursor: 0,
+            filter: String::new(),
+            tab_prefix: None,
+            base_branch: "main".to_string(),
+            editing_base: true,
+            base_filter: String::new(),
+            base_tab_prefix: None,
+            base_cursor: 0,
+            repo_path: PathBuf::from("/tmp"),
+            mode: AddWorktreeMode::Branch,
+            pr_list: None,
+            pr_request_counter: 0,
+        }
+    }
+
+    #[test]
+    fn sanitize_branch_name_replaces_whitespace() {
+        assert_eq!(sanitize_branch_name("  my new\tfeature "), "my_new_feature");
+        assert_eq!(sanitize_branch_name("plain"), "plain");
+    }
+
+    #[test]
+    fn base_selection_uses_highlighted_branch() {
+        let mut s = state(&["main", "develop", "feature/x"]);
+        s.base_filter = "dev".to_string();
+        assert_eq!(s.base_filtered(), vec![1]);
+        assert_eq!(s.base_selection().as_deref(), Some("develop"));
+    }
+
+    #[test]
+    fn base_selection_falls_back_to_typed_text() {
+        let mut s = state(&["main"]);
+        s.base_filter = "origin/release".to_string();
+        assert!(s.base_filtered().is_empty());
+        assert_eq!(s.base_selection().as_deref(), Some("origin/release"));
     }
 }

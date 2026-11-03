@@ -552,9 +552,11 @@ fn handle_terminal_event(
             // Base branch editing mode
             match key.code {
                 crossterm::event::KeyCode::Tab => app.add_worktree_base_tab_complete(),
+                crossterm::event::KeyCode::Down => app.add_worktree_base_move(1),
+                crossterm::event::KeyCode::Up => app.add_worktree_base_move(-1),
                 crossterm::event::KeyCode::Enter => app.add_worktree_toggle_base(),
                 crossterm::event::KeyCode::Backspace => app.add_worktree_base_delete(),
-                crossterm::event::KeyCode::Esc => app.add_worktree_toggle_base(),
+                crossterm::event::KeyCode::Esc => app.add_worktree_base_cancel(),
                 crossterm::event::KeyCode::Char('w')
                     if key
                         .modifiers

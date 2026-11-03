@@ -56,13 +56,13 @@ fn default_add_worktree_base(repo_path: &Path) -> String {
                 .ok()
                 .flatten()
         })
+        .or_else(|| git::get_default_branch_in(Some(repo_path)).ok())
         .or_else(|| {
             git::get_current_branch_in(repo_path)
                 .ok()
                 .map(|branch| branch.trim().to_string())
                 .filter(|branch| !branch.is_empty())
         })
-        .or_else(|| git::get_default_branch_in(Some(repo_path)).ok())
         .unwrap_or_else(|| "main".to_string())
 }
 
@@ -1118,6 +1118,7 @@ impl App {
             editing_base: false,
             base_filter: String::new(),
             base_tab_prefix: None,
+            base_cursor: 0,
             repo_path,
             mode: AddWorktreeMode::Branch,
             pr_list: None,
@@ -1253,7 +1254,7 @@ impl App {
         }
     }
 
-    /// Toggle base branch editing mode (Ctrl+b).
+    /// Toggle base branch picker (Ctrl+b). Closing it accepts the highlighted branch.
     pub fn add_worktree_toggle_base(&mut self) {
         if let Some(ref mut state) = self.pending_add_worktree {
             // No base editing in PR mode
@@ -1261,18 +1262,42 @@ impl App {
                 return;
             }
             if state.editing_base {
-                // Accept current base_filter as the base branch if non-empty
-                let text = state.base_filter.trim().to_string();
-                if !text.is_empty() {
-                    state.base_branch = text;
+                if let Some(base) = state.base_selection() {
+                    state.base_branch = base;
                 }
                 state.editing_base = false;
                 state.base_filter.clear();
                 state.base_tab_prefix = None;
             } else {
                 state.editing_base = true;
-                state.base_filter = state.base_branch.clone();
+                state.base_filter.clear();
                 state.base_tab_prefix = None;
+                state.base_cursor = state
+                    .base_filtered()
+                    .iter()
+                    .position(|&idx| state.branches[idx] == state.base_branch)
+                    .unwrap_or(0);
+            }
+        }
+    }
+
+    /// Close the base branch picker without changing the base (Esc).
+    pub fn add_worktree_base_cancel(&mut self) {
+        if let Some(ref mut state) = self.pending_add_worktree {
+            state.editing_base = false;
+            state.base_filter.clear();
+            state.base_tab_prefix = None;
+            state.base_cursor = 0;
+        }
+    }
+
+    /// Move the base branch picker cursor by `delta`, wrapping around.
+    pub fn add_worktree_base_move(&mut self, delta: isize) {
+        if let Some(ref mut state) = self.pending_add_worktree {
+            let len = state.base_filtered().len();
+            if len > 0 {
+                state.base_cursor =
+                    (state.base_cursor as isize + delta).rem_euclid(len as isize) as usize;
             }
         }
     }
@@ -1290,6 +1315,12 @@ impl App {
             None,
         ) {
             state.base_filter = completion.branch;
+            let picked = state.base_filter.clone();
+            state.base_cursor = state
+                .base_filtered()
+                .iter()
+                .position(|&idx| state.branches[idx] == picked)
+                .unwrap_or(0);
         }
     }
 
@@ -1298,6 +1329,7 @@ impl App {
         if let Some(ref mut state) = self.pending_add_worktree {
             state.base_filter.push(c);
             state.base_tab_prefix = None;
+            state.base_cursor = 0;
         }
     }
 
@@ -1306,6 +1338,7 @@ impl App {
         if let Some(ref mut state) = self.pending_add_worktree {
             state.base_filter.pop();
             state.base_tab_prefix = None;
+            state.base_cursor = 0;
         }
     }
 
@@ -1314,6 +1347,7 @@ impl App {
         if let Some(ref mut state) = self.pending_add_worktree {
             delete_word_backward(&mut state.base_filter);
             state.base_tab_prefix = None;
+            state.base_cursor = 0;
         }
     }
 
@@ -1322,6 +1356,7 @@ impl App {
         if let Some(ref mut state) = self.pending_add_worktree {
             state.base_filter.clear();
             state.base_tab_prefix = None;
+            state.base_cursor = 0;
         }
     }
 
@@ -1349,7 +1384,7 @@ impl App {
                     }
 
                     // "Create new branch" selected
-                    let name = state.filter.trim().to_string();
+                    let name = super::types::sanitize_branch_name(&state.filter);
                     if name.is_empty() {
                         return;
                     }

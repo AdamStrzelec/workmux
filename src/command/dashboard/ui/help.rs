@@ -677,14 +677,18 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
     let area = f.area();
     let height = (area.height * 2 / 5).clamp(10, 25);
     // overhead: filter + blank + action_row + blank + footer + blank_after_footer + borders(2)
-    let has_action_row = !is_pr_mode && !state.filter.trim().is_empty();
+    let has_action_row = !is_pr_mode && !state.editing_base && !state.filter.trim().is_empty();
     let overhead: u16 = 7 + if has_action_row { 1 } else { 0 };
     let max_visible: usize = height.saturating_sub(overhead) as usize;
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // Filter input line
-    lines.push(render_filter_line(&state.filter, palette));
+    // Filter input line (base picker filters branches by its own query)
+    if state.editing_base {
+        lines.push(render_filter_line(&state.base_filter, palette));
+    } else {
+        lines.push(render_filter_line(&state.filter, palette));
+    }
 
     lines.push(Line::from(""));
 
@@ -757,6 +761,47 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
                 append_blank_lines(&mut lines, max_visible);
             }
         }
+    } else if state.editing_base {
+        // Base branch picker
+        let filtered = state.base_filtered();
+        if filtered.is_empty() {
+            let msg = if state.base_filter.trim().is_empty() {
+                " No branches.".to_string()
+            } else {
+                format!(" Use \"{}\" as base", state.base_filter.trim())
+            };
+            lines.push(Line::from(vec![Span::styled(
+                msg,
+                Style::default().fg(palette.dimmed),
+            )]));
+            append_blank_lines(&mut lines, max_visible.saturating_sub(1));
+        } else {
+            let (start, end) = scroll_window(state.base_cursor, filtered.len(), max_visible);
+            for (fi, &idx) in filtered.iter().enumerate().take(end).skip(start) {
+                let branch = &state.branches[idx];
+                let is_selected = fi == state.base_cursor;
+                let style = if is_selected {
+                    Style::default().fg(palette.accent)
+                } else {
+                    Style::default().fg(palette.text)
+                };
+                let mut spans = vec![
+                    Span::styled(
+                        if is_selected { "> " } else { "  " },
+                        Style::default().fg(palette.text),
+                    ),
+                    Span::styled(branch.clone(), style),
+                ];
+                if *branch == state.base_branch {
+                    spans.push(render_modal_dim_text(palette, " (current)"));
+                }
+                lines.push(Line::from(spans));
+            }
+            append_blank_lines(
+                &mut lines,
+                max_visible.saturating_sub(end.saturating_sub(start)),
+            );
+        }
     } else {
         // Branch mode
         let filtered = state.filtered();
@@ -775,7 +820,10 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
             let label = if let Some(pr_num) = state.detected_pr_number() {
                 format!("+ Checkout PR #{}", pr_num)
             } else {
-                format!("+ Create \"{}\"", state.filter.trim())
+                format!(
+                    "+ Create \"{}\"",
+                    super::super::app::sanitize_branch_name(&state.filter)
+                )
             };
 
             lines.push(Line::from(vec![
@@ -838,7 +886,12 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
     }
 
     // Contextual hint based on current selection
-    if !is_pr_mode {
+    if state.editing_base {
+        lines.push(Line::from(vec![Span::styled(
+            " Pick base branch (merge target) for new branches",
+            Style::default().fg(palette.dimmed),
+        )]));
+    } else if !is_pr_mode {
         let has_create_row = !state.filter.trim().is_empty();
         let hint = if has_create_row && state.cursor == 0 {
             if state.detected_pr_number().is_some() {
@@ -871,7 +924,16 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
     }
 
     // Footer (mode-dependent)
-    if is_pr_mode {
+    if state.editing_base {
+        lines.push(render_modal_footer_row(
+            palette,
+            &[
+                ("↑↓", " move  "),
+                ("Enter", " use base  "),
+                ("Esc", " back"),
+            ],
+        ));
+    } else if is_pr_mode {
         lines.push(render_modal_footer_row(
             palette,
             &[
@@ -885,7 +947,7 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
             palette,
             &[
                 ("Enter", " select  "),
-                ("^b", " base  "),
+                ("^b", " change base  "),
                 ("^p", " PRs  "),
                 ("Esc", " cancel"),
             ],
@@ -898,6 +960,8 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
     // Title and bottom border
     let title_text = if is_pr_mode {
         "Checkout PR"
+    } else if state.editing_base {
+        "Select Base Branch"
     } else {
         "Add Worktree"
     };
@@ -906,24 +970,13 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
 
     // Show base branch on bottom border only in branch mode
     if !is_pr_mode {
-        let base_title = if state.editing_base {
-            Line::from(vec![
-                Span::styled(" Base: ", Style::default().fg(palette.dimmed)),
-                Span::styled(
-                    state.base_filter.clone(),
-                    Style::default().fg(palette.accent),
-                ),
-                Span::styled("_ ", Style::default().fg(palette.accent)),
-            ])
-        } else {
-            Line::from(vec![
-                Span::styled(" Base: ", Style::default().fg(palette.dimmed)),
-                Span::styled(
-                    format!("{} ", state.base_branch),
-                    Style::default().fg(palette.text),
-                ),
-            ])
-        };
+        let base_title = Line::from(vec![
+            Span::styled(" Base: ", Style::default().fg(palette.dimmed)),
+            Span::styled(
+                format!("{} ", state.base_branch),
+                Style::default().fg(palette.accent),
+            ),
+        ]);
         block = block.title_bottom(base_title);
     }
 
