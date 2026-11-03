@@ -83,6 +83,7 @@ fn run_add_worktree_job(
     job: AddWorktreeJob,
     repo_path: PathBuf,
     mux: Arc<dyn Multiplexer>,
+    launch_session: Option<String>,
 ) -> anyhow::Result<String> {
     match job {
         AddWorktreeJob::CreateBranch { name, base_branch } => {
@@ -99,6 +100,9 @@ fn run_add_worktree_job(
             let mut options = workflow::types::SetupOptions::new(true, true, true);
             options.focus_window = false;
             options.mode = config.mode();
+            if options.mode == crate::config::MuxMode::Window {
+                options.window_session_name = launch_session.clone();
+            }
 
             let result = workflow::create(
                 &ctx,
@@ -158,6 +162,9 @@ fn run_add_worktree_job(
             let mut options = workflow::types::SetupOptions::new(true, true, true);
             options.focus_window = false;
             options.mode = config.mode();
+            if options.mode == crate::config::MuxMode::Window {
+                options.window_session_name = launch_session.clone();
+            }
 
             let result = workflow::create(
                 &ctx,
@@ -199,10 +206,12 @@ fn spawn_add_worktree_job(
     job: AddWorktreeJob,
     repo_path: PathBuf,
     mux: Arc<dyn Multiplexer>,
+    launch_session: Option<String>,
     tx: mpsc::Sender<AppEvent>,
 ) {
     std::thread::spawn(move || {
-        let result = run_add_worktree_job(job, repo_path, mux).map_err(|e| e.to_string());
+        let result =
+            run_add_worktree_job(job, repo_path, mux, launch_session).map_err(|e| e.to_string());
         let _ = tx.send(AppEvent::AddWorktreeResult(result));
     });
 }
@@ -240,10 +249,13 @@ impl App {
         let is_fetching = self.is_worktree_fetching.clone();
         let config = self.config.clone();
         let mux = self.mux.clone();
-        let repo_override = self
+        // Explicit project pick wins; otherwise use the active pane's directory
+        // (a tmux popup's CWD is the session directory, not the pane's).
+        let explicit_override = self
             .worktree_project_override
             .as_ref()
             .map(|(_, p)| p.clone());
+        let pane_dir = self.current_worktree.clone();
 
         std::thread::spawn(move || {
             struct ResetFlag(Arc<AtomicBool>);
@@ -256,9 +268,15 @@ impl App {
 
             // fetch_pr_status=false: the dashboard fetches PR status separately,
             // and workflow::list's spinner would corrupt the TUI output
-            if let Ok(worktrees) =
-                workflow::list_in(&config, mux.as_ref(), false, &[], repo_override.as_deref())
-            {
+            let list =
+                |dir: Option<&Path>| workflow::list_in(&config, mux.as_ref(), false, &[], dir);
+            let result = match (&explicit_override, &pane_dir) {
+                (Some(dir), _) => list(Some(dir)),
+                // Pane may sit outside any repo: fall back to the dashboard's CWD.
+                (None, Some(dir)) => list(Some(dir)).or_else(|_| list(None)),
+                (None, None) => list(None),
+            };
+            if let Ok(worktrees) = result {
                 let _ = tx.send(AppEvent::WorktreeList(worktrees));
             }
         });
@@ -497,20 +515,32 @@ impl App {
             return;
         };
 
-        if worktree.is_main || !worktree.has_mux_window || self.removals.contains(&worktree.path) {
+        if self.removals.contains(&worktree.path) {
+            return;
+        }
+        if !worktree.has_mux_window {
+            self.status_message = Some((
+                format!("'{}' has no open window", worktree.handle),
+                std::time::Instant::now(),
+            ));
             return;
         }
 
+        // Read worktree metadata from the worktree's own repo, not the
+        // dashboard's CWD (which may be outside the repository in a popup).
+        let workdir = Some(worktree.path.as_path());
+        let handle = worktree.handle.clone();
         let prefix = self.config.window_prefix();
-        if worktree.mode == crate::config::MuxMode::Window {
-            let target_name = crate::git::get_worktree_target_window(&worktree.handle)
+        let result = if worktree.mode == crate::config::MuxMode::Window {
+            let target_name = crate::git::get_worktree_target_window_in(&worktree.handle, workdir)
                 .unwrap_or_else(|| worktree.handle.clone());
             let full_name = crate::multiplexer::util::prefixed(prefix, &target_name);
-            let parent_session = crate::git::get_worktree_window_session(&worktree.handle);
+            let parent_session =
+                crate::git::get_worktree_window_session_in(&worktree.handle, workdir);
             let window_token = self
                 .mux
                 .supports_window_ownership()
-                .then(|| crate::git::get_worktree_window_token(&worktree.handle))
+                .then(|| crate::git::get_worktree_window_token_in(&worktree.handle, workdir))
                 .flatten();
             let target = if let Some(token) = window_token {
                 self.mux
@@ -533,18 +563,25 @@ impl App {
                     parent_session,
                 ))
             };
-            if let Some(target) = target {
-                let _ = self.mux.kill_window_target(&target);
+            match target {
+                Some(target) => self.mux.kill_window_target(&target),
+                None => Err(anyhow::anyhow!("window not found")),
             }
         } else {
-            let target_name = crate::git::get_worktree_target_session(&worktree.handle)
+            let target_name = crate::git::get_worktree_target_session_in(&worktree.handle, workdir)
                 .unwrap_or_else(|| worktree.handle.clone());
             let full_name = crate::multiplexer::util::prefixed(prefix, &target_name);
-            let _ = crate::multiplexer::handle::MuxHandle::kill_full(
+            crate::multiplexer::handle::MuxHandle::kill_full(
                 self.mux.as_ref(),
                 worktree.mode,
                 &full_name,
-            );
+            )
+        };
+        if let Err(error) = result {
+            self.status_message = Some((
+                format!("Failed to close '{handle}': {error:#}"),
+                std::time::Instant::now(),
+            ));
         }
         self.trigger_worktree_refetch();
     }
@@ -949,19 +986,60 @@ impl App {
         }
 
         let handle = worktree.handle.clone();
+        let path = worktree.path.clone();
+        let has_window = worktree.has_mux_window;
 
-        let Ok(ctx) = workflow::WorkflowContext::new(self.config.clone(), self.mux.clone(), None)
-        else {
-            return;
-        };
+        // Resolve config and context from the worktree itself, not from the
+        // dashboard's CWD: a tmux popup starts in the session directory, which
+        // may be outside the repository.
+        let result = (|| -> anyhow::Result<()> {
+            let (config, config_location) =
+                crate::config::Config::load_with_location_from(&path, None)?;
+            let mut options = workflow::types::SetupOptions::new(false, false, true);
+            options.mode = config.mode();
+            // A closed window is (re)created in the session the dashboard was
+            // launched from, so it shows up where the user is instead of in a
+            // previously remembered session. An open window is left alone and
+            // the client switches to it. This also covers tmux popups, which
+            // have no TMUX_PANE to infer the session from.
+            if options.mode == crate::config::MuxMode::Window && !has_window {
+                options.window_session_name = self.launch_session.clone();
+            }
+            let ctx = workflow::WorkflowContext::new_in(
+                &path,
+                config,
+                self.mux.clone(),
+                config_location,
+            )?;
+            let created_in = options.window_session_name.clone();
+            let result = workflow::open(&handle, &ctx, options, false, None, None, None)?;
+            // With an explicit parent session, window setup only selects the
+            // pane, which leaves the client on its old window. Switch to the
+            // freshly created window so it is in front of the user.
+            if !result.did_switch && result.mode == crate::config::MuxMode::Window {
+                let target = crate::multiplexer::WindowTarget::new(
+                    result.mux_target_full_name.clone(),
+                    created_in,
+                );
+                self.mux.select_window_target(&target)?;
+            }
+            Ok(())
+        })();
 
-        let mut options = workflow::types::SetupOptions::new(false, false, true);
-        options.mode = self.config.mode();
-        if workflow::open(&handle, &ctx, options, false, None, None, None).is_ok()
-            && self.should_close_after_jump()
-        {
-            self.should_jump = true;
+        match result {
+            Ok(()) => {
+                if self.should_close_after_jump() {
+                    self.should_jump = true;
+                }
+            }
+            Err(error) => {
+                self.status_message = Some((
+                    format!("Failed to open '{handle}': {error:#}"),
+                    std::time::Instant::now(),
+                ));
+            }
         }
+        self.trigger_worktree_refetch();
     }
 
     /// Jump to the selected worktree's agent or mux window.
@@ -1305,6 +1383,7 @@ impl App {
             AddWorktreeJob::CheckoutPr { pr_number },
             repo_path,
             self.mux.clone(),
+            self.launch_session.clone(),
             self.event_tx.clone(),
         );
 
@@ -1326,6 +1405,7 @@ impl App {
             AddWorktreeJob::CreateBranch { name, base_branch },
             repo_path,
             self.mux.clone(),
+            self.launch_session.clone(),
             self.event_tx.clone(),
         );
 
