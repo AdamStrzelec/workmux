@@ -4,6 +4,7 @@ mod dashboard;
 mod diff;
 mod format;
 mod help;
+mod key_menu;
 mod popup;
 pub mod theme;
 pub mod worktree;
@@ -33,6 +34,7 @@ pub use self::help::{
     render_confirm_remove, render_help, render_project_picker, render_row_context, render_sweep,
     render_sweep_progress,
 };
+pub use self::key_menu::render_key_menu;
 
 /// Main UI entry point - renders the appropriate view based on app state.
 pub fn ui(f: &mut Frame, app: &mut App) {
@@ -47,6 +49,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // Render overlays on top
     let has_modal = app.sweep_progress.is_some()
         || app.show_help
+        || app.show_key_menu
         || app.pending_kill_pane_id.is_some()
         || app.pending_remove.is_some()
         || app.pending_base_picker.is_some()
@@ -64,6 +67,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         render_sweep_progress(f, app);
     } else if app.show_help {
         render_help(f, app);
+    } else if app.show_key_menu {
+        render_key_menu(f, app);
     } else if app.pending_kill_pane_id.is_some() {
         render_confirm_kill(f, app);
     } else if app.pending_remove.is_some() {

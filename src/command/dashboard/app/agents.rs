@@ -648,6 +648,31 @@ impl App {
         self.open_pr_url(|url| format!("{url}/checks"));
     }
 
+    /// Open the selected agent's or worktree's directory in VS Code.
+    pub fn open_selected_in_editor(&mut self) {
+        let path = match self.active_tab {
+            DashboardTab::Agents => self
+                .table_state
+                .selected()
+                .and_then(|i| self.agents.get(i))
+                .map(|agent| agent.path.clone()),
+            DashboardTab::Worktrees => self
+                .worktree_table_state
+                .selected()
+                .and_then(|i| self.worktrees.get(i))
+                .map(|wt| wt.path.clone()),
+        };
+        let Some(path) = path else {
+            self.status_message = Some(("Nothing selected".to_string(), std::time::Instant::now()));
+            return;
+        };
+        let message = match open_in_vscode(&path) {
+            Ok(()) => format!("Opened {} in VS Code", path.display()),
+            Err(e) => format!("Failed to open VS Code: {e}"),
+        };
+        self.status_message = Some((message, std::time::Instant::now()));
+    }
+
     /// Open a URL derived from the selected item's PR URL.
     fn open_pr_url(&mut self, make_url: impl FnOnce(&str) -> String) {
         let pr = match self.active_tab {
@@ -743,6 +768,29 @@ fn open_url(url: &str) -> std::io::Result<()> {
     let cmd = "xdg-open";
 
     std::process::Command::new(cmd).arg(url).spawn().map(|_| ())
+}
+
+/// Launch VS Code on `path`: the `code` CLI if on PATH, else the macOS app.
+fn open_in_vscode(path: &std::path::Path) -> anyhow::Result<()> {
+    use std::process::{Command, Stdio};
+    let spawn = |cmd: &mut Command| {
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map(|_| ())
+    };
+    if which::which("code").is_ok() {
+        return Ok(spawn(Command::new("code").arg(path))?);
+    }
+    if cfg!(target_os = "macos") {
+        return Ok(spawn(
+            Command::new("open")
+                .args(["-a", "Visual Studio Code"])
+                .arg(path),
+        )?);
+    }
+    anyhow::bail!("`code` not found on PATH")
 }
 
 #[cfg(test)]

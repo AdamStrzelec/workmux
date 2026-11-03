@@ -34,6 +34,7 @@ pub fn action_for_key(ctx: Context, key: KeyEvent, exit_key: InputExitKey) -> Op
 
 fn dashboard_normal_key(key: KeyEvent) -> Option<Action> {
     match key.code {
+        KeyCode::Char(' ') => Some(Action::ShowKeyMenu),
         KeyCode::Char('?') => Some(Action::ShowHelp),
         KeyCode::Char('q') => Some(Action::Quit),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Action::Quit),
@@ -66,6 +67,7 @@ fn dashboard_normal_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('/') => Some(Action::EnterFilterMode),
         KeyCode::Char('o') => Some(Action::OpenPr),
         KeyCode::Char('O') => Some(Action::OpenPrChecks),
+        KeyCode::Char('e') => Some(Action::OpenInEditor),
         KeyCode::Char('b') => Some(Action::ShowBaseBranchPicker),
         // Act only while the remote servers footer tip is on screen.
         KeyCode::Char('g') => Some(Action::OpenRemoteGuide),
@@ -92,6 +94,7 @@ fn dashboard_filter_key(key: KeyEvent) -> Option<Action> {
 
 fn worktree_normal_key(key: KeyEvent) -> Option<Action> {
     match key.code {
+        KeyCode::Char(' ') => Some(Action::ShowKeyMenu),
         KeyCode::Char('?') => Some(Action::ShowHelp),
         KeyCode::Char('q') => Some(Action::Quit),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Some(Action::Quit),
@@ -107,6 +110,7 @@ fn worktree_normal_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Enter => Some(Action::JumpToSelectedWorktree),
         KeyCode::Char('o') => Some(Action::OpenPr),
         KeyCode::Char('O') => Some(Action::OpenPrChecks),
+        KeyCode::Char('e') => Some(Action::OpenInEditor),
         KeyCode::Char('r') => Some(Action::RemoveSelectedWorktree),
         KeyCode::Char('c') => Some(Action::CloseSelectedWorktreeWindow),
         KeyCode::Char('R') => Some(Action::StartSweep),
@@ -210,6 +214,7 @@ pub fn help_rows(ctx: Context, exit_key: InputExitKey) -> Vec<(String, &'static 
     let rows = match ctx {
         Context::DashboardNormal => vec![
             ("?", "Show help"),
+            ("Space", "Shortcut menu"),
             ("q", "Quit"),
             ("j/k/C-n/C-p", "Navigate up/down"),
             ("Enter", "Jump to agent"),
@@ -228,6 +233,7 @@ pub fn help_rows(ctx: Context, exit_key: InputExitKey) -> Vec<(String, &'static 
             ("b", "Change base branch"),
             ("o", "Open PR in browser"),
             ("O", "Open PR checks in browser"),
+            ("e", "Open in VS Code"),
             ("X", "Kill agent"),
             ("r", "Remove worktree"),
             ("R", "Sweep cleanup"),
@@ -244,12 +250,14 @@ pub fn help_rows(ctx: Context, exit_key: InputExitKey) -> Vec<(String, &'static 
         ],
         Context::WorktreeNormal => vec![
             ("?", "Show help"),
+            ("Space", "Shortcut menu"),
             ("q", "Quit"),
             ("j/k/C-n/C-p", "Navigate up/down"),
             ("Enter", "Jump to worktree"),
             ("Tab", "Switch to agents"),
             ("o", "Open PR in browser"),
             ("O", "Open PR checks in browser"),
+            ("e", "Open in VS Code"),
             ("a", "Add worktree"),
             ("r", "Remove worktree"),
             ("c", "Close mux window"),

@@ -9,6 +9,7 @@ use super::keymap::Context;
 pub enum Action {
     // Global actions
     ShowHelp,
+    ShowKeyMenu,
     Quit,
 
     // Dashboard navigation
@@ -67,6 +68,7 @@ pub enum Action {
     // Shared (both tabs)
     OpenPr,
     OpenPrChecks,
+    OpenInEditor,
 
     // Worktree view
     WorktreeNext,
@@ -110,6 +112,7 @@ pub fn apply_action(app: &mut App, action: Action) -> bool {
             | Action::SendCommitDashboard
             | Action::TriggerMergeDashboard
             | Action::KillSelected
+            | Action::OpenInEditor
     ) && app.active_tab == DashboardTab::Agents
         && let Some(remote) = app.selected_detached()
     {
@@ -120,6 +123,10 @@ pub fn apply_action(app: &mut App, action: Action) -> bool {
         // Global
         Action::ShowHelp => {
             app.show_help = true;
+            false
+        }
+        Action::ShowKeyMenu => {
+            app.show_key_menu = true;
             false
         }
         Action::Quit => {
@@ -245,6 +252,10 @@ pub fn apply_action(app: &mut App, action: Action) -> bool {
         }
         Action::OpenPrChecks => {
             app.open_pr_checks_for_selected();
+            false
+        }
+        Action::OpenInEditor => {
+            app.open_selected_in_editor();
             false
         }
 

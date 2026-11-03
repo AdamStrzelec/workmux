@@ -326,6 +326,17 @@ fn handle_terminal_event(
         return;
     }
 
+    // Space menu: Space/Esc close it, any other key closes it and runs as usual
+    if app.show_key_menu {
+        app.show_key_menu = false;
+        if matches!(
+            key.code,
+            crossterm::event::KeyCode::Char(' ') | crossterm::event::KeyCode::Esc
+        ) {
+            return;
+        }
+    }
+
     if app.pending_row_context.is_some() {
         let action = match key.code {
             crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => {

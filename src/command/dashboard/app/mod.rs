@@ -102,6 +102,8 @@ pub struct App {
     pub hide_stale: bool,
     /// Whether to show the help overlay
     pub show_help: bool,
+    /// Whether the Space shortcut menu is shown
+    pub show_key_menu: bool,
     /// Preview pane size as percentage (1-90). Higher = larger preview.
     pub preview_size: u8,
     /// Last jumped-to pane_id for quick toggle (cached from settings)
@@ -276,6 +278,7 @@ impl App {
             spinner_frame: 0,
             hide_stale,
             show_help: false,
+            show_key_menu: false,
             preview_size,
             last_pane_id,
             palette,
