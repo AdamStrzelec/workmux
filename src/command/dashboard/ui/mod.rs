@@ -31,8 +31,8 @@ pub use self::dashboard::render_dashboard;
 pub use self::diff::render_diff_view;
 pub use self::help::{
     render_add_worktree, render_base_picker, render_command_palette, render_confirm_kill,
-    render_confirm_remove, render_help, render_project_picker, render_row_context, render_sweep,
-    render_sweep_progress,
+    render_confirm_remove, render_help, render_project_picker, render_row_context,
+    render_session_config, render_sweep, render_sweep_progress,
 };
 pub use self::key_menu::render_key_menu;
 
@@ -54,6 +54,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         || app.pending_remove.is_some()
         || app.pending_base_picker.is_some()
         || app.pending_project_picker.is_some()
+        || app.pending_session_config.is_some()
         || app.pending_sweep.is_some()
         || app.pending_add_worktree.is_some()
         || app.pending_command_palette.is_some()
@@ -81,6 +82,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         render_base_picker(f, app);
     } else if app.pending_project_picker.is_some() {
         render_project_picker(f, app);
+    } else if app.pending_session_config.is_some() {
+        render_session_config(f, app);
     } else if app.pending_sweep.is_some() {
         render_sweep(f, app);
     } else if app.pending_add_worktree.is_some() {

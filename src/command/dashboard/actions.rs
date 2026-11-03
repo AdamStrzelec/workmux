@@ -80,6 +80,7 @@ pub enum Action {
     CycleWorktreeSortMode,
     JumpToSelectedWorktree,
     ShowProjectPicker,
+    ShowSessionConfig,
     ShowBaseBranchPicker,
     AddWorktree,
 
@@ -296,6 +297,10 @@ pub fn apply_action(app: &mut App, action: Action) -> bool {
         }
         Action::JumpToSelectedWorktree => {
             app.jump_to_selected_worktree();
+            false
+        }
+        Action::ShowSessionConfig => {
+            app.show_session_config();
             false
         }
         Action::ShowProjectPicker => {

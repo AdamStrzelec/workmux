@@ -90,6 +90,7 @@ const WORKTREE_COLUMNS: &[Column] = &[
             ("/", "filter"),
             ("s", "cycle sort"),
             ("p", "switch project"),
+            ("C", "session tabs config"),
             ("T", "cycle theme"),
         ],
     ),

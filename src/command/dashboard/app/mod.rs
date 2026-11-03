@@ -5,9 +5,11 @@ mod appearance;
 mod background;
 mod events;
 mod preview;
+mod session_config;
 mod types;
 mod worktrees;
 
+pub use session_config::*;
 pub use types::*;
 
 use anyhow::Result;
@@ -149,6 +151,7 @@ pub struct App {
     pub pending_sweep: Option<SweepState>,
     /// Pending project picker state (shown in project picker modal)
     pub pending_project_picker: Option<ProjectPicker>,
+    pub pending_session_config: Option<SessionConfigEditor>,
     /// Pending base branch picker state (shown in base picker modal)
     pub pending_base_picker: Option<BaseBranchPicker>,
     /// Pending add-worktree modal state
@@ -302,6 +305,7 @@ impl App {
             removals: WorktreeRemovals::default(),
             pending_sweep: None,
             pending_project_picker: None,
+            pending_session_config: None,
             pending_base_picker: None,
             pending_add_worktree: None,
             worktree_project_override: None,

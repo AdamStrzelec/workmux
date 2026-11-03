@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Cell, Paragraph, Row, Table},
 };
 
-use super::super::app::{App, RowContextKind};
+use super::super::app::{App, RowContextKind, SessionTabField};
 use super::super::keymap::{Context, help_rows};
 use super::popup::{centered_rect, popup_block, render_popup};
 use super::theme::ThemePalette;
@@ -930,4 +930,121 @@ pub fn render_add_worktree(f: &mut Frame, app: &App) {
     let paragraph = Paragraph::new(Text::from(lines)).block(block);
 
     render_popup(f, popup_area, paragraph);
+}
+
+/// Render the session tabs config modal.
+pub fn render_session_config(f: &mut Frame, app: &App) {
+    let Some(ref editor) = app.pending_session_config else {
+        return;
+    };
+    let palette = &app.palette;
+    let mut lines: Vec<Line> = vec![
+        Line::from(vec![
+            Span::styled(
+                format!(" {} ", editor.project_name),
+                Style::default()
+                    .fg(palette.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                editor.config_path.display().to_string(),
+                Style::default().fg(palette.text),
+            ),
+        ]),
+        Line::from(""),
+    ];
+
+    let name_w = editor
+        .tabs
+        .iter()
+        .map(|t| t.name.chars().count())
+        .max()
+        .unwrap_or(0)
+        .clamp(5, 16);
+
+    for (i, tab) in editor.tabs.iter().enumerate() {
+        let selected = i == editor.cursor;
+        let cursor = if selected { "> " } else { "  " };
+        let row_style = if selected {
+            Style::default().fg(palette.accent)
+        } else {
+            Style::default().fg(palette.text)
+        };
+        let editing = editor.edit.as_ref().filter(|_| selected);
+        let field_text = |field: SessionTabField, value: &str| -> String {
+            match editing {
+                Some(edit) if edit.field == field => format!("{}_", edit.buffer),
+                _ => value.to_string(),
+            }
+        };
+        let name = field_text(SessionTabField::Name, &tab.name);
+        let name = if name.is_empty() {
+            "(auto)".to_string()
+        } else {
+            name
+        };
+        let command = field_text(SessionTabField::Command, &tab.command);
+        let command = if command.is_empty() {
+            "(shell)".to_string()
+        } else {
+            command
+        };
+        let mut spans = vec![
+            Span::styled(cursor, row_style),
+            Span::styled(
+                format!("{:>2}. ", i + 1),
+                Style::default().fg(palette.dimmed),
+            ),
+            Span::styled(
+                format!("{name:<name_w$}  "),
+                row_style.add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(command, row_style),
+        ];
+        if i == editor.focus {
+            spans.push(Span::styled(
+                "  ★ focus",
+                Style::default().fg(palette.success),
+            ));
+        }
+        if !tab.extra_panes.is_empty() {
+            spans.push(Span::styled(
+                format!("  +{} panes", tab.extra_panes.len()),
+                Style::default().fg(palette.dimmed),
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    lines.push(Line::from(""));
+    if editor.edit.is_some() {
+        lines.push(render_modal_footer_row(
+            palette,
+            &[("Enter", " confirm  "), ("Esc", " cancel edit")],
+        ));
+    } else {
+        lines.push(render_modal_footer_row(
+            palette,
+            &[
+                ("Enter", " command  "),
+                ("n", " name  "),
+                ("a", " add  "),
+                ("d", " delete  "),
+                ("J/K", " move  "),
+                ("f", " focus"),
+            ],
+        ));
+        let save_label = if editor.dirty { " save*  " } else { " save  " };
+        lines.push(render_modal_footer_row(
+            palette,
+            &[("s", save_label), ("Esc", " cancel")],
+        ));
+    }
+
+    let content_width = lines.iter().map(Line::width).max().unwrap_or(40);
+    let width = (content_width as u16 + 4).clamp(50, f.area().width.saturating_sub(4));
+    let height = lines.len() as u16 + 2;
+    let area = centered_rect(f.area(), width, height);
+    let block = popup_block(Some("Session Tabs"), palette);
+    render_popup(f, area, Paragraph::new(Text::from(lines)).block(block));
 }

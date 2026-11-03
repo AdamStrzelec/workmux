@@ -59,7 +59,7 @@ use crate::github;
 use crate::multiplexer::{create_backend, detect_backend};
 
 use self::actions::apply_action;
-use self::app::{App, AppEvent, ViewMode};
+use self::app::{App, AppEvent, SessionTabField, ViewMode};
 use self::diff_ops::DiffOps;
 use self::keymap::{Context, action_for_key};
 use self::mouse::handle_mouse_event;
@@ -408,6 +408,38 @@ fn handle_terminal_event(
             crossterm::event::KeyCode::Backspace => app.base_picker_filter_delete(),
             crossterm::event::KeyCode::Esc => app.pending_base_picker = None,
             crossterm::event::KeyCode::Char(c) => app.base_picker_filter_append(c),
+            _ => {}
+        }
+        return;
+    }
+
+    // Session tabs config modal
+    if let Some(editor) = app.pending_session_config.as_mut() {
+        use crossterm::event::KeyCode;
+        if let Some(edit) = editor.edit.as_mut() {
+            match key.code {
+                KeyCode::Enter => editor.commit_edit(),
+                KeyCode::Esc => editor.edit = None,
+                KeyCode::Backspace => {
+                    edit.buffer.pop();
+                }
+                KeyCode::Char(c) => edit.buffer.push(c),
+                _ => {}
+            }
+            return;
+        }
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => editor.move_cursor(true),
+            KeyCode::Char('k') | KeyCode::Up => editor.move_cursor(false),
+            KeyCode::Char('J') => editor.move_tab(true),
+            KeyCode::Char('K') => editor.move_tab(false),
+            KeyCode::Char('a') => editor.add_tab(),
+            KeyCode::Char('d') => editor.delete_tab(),
+            KeyCode::Char('f') => editor.set_focus(),
+            KeyCode::Char('n') => editor.start_edit(SessionTabField::Name),
+            KeyCode::Enter | KeyCode::Char('e') => editor.start_edit(SessionTabField::Command),
+            KeyCode::Char('s') => app.save_session_config(),
+            KeyCode::Esc | KeyCode::Char('q') => app.pending_session_config = None,
             _ => {}
         }
         return;
