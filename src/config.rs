@@ -1026,6 +1026,11 @@ pub struct Config {
     #[serde(default)]
     pub default_session: Option<String>,
 
+    /// Extra repositories always listed in the dashboard project picker,
+    /// even without running agents. Supports `~`.
+    #[serde(default)]
+    pub projects: Option<Vec<String>>,
+
     /// Placement for new tmux windows in window mode.
     #[serde(default)]
     pub window_placement: Option<WindowPlacement>,
@@ -3262,6 +3267,9 @@ impl Config {
         // Special case: default_session (project wins if explicitly set)
         merged.default_session = project.default_session.or(self.default_session);
 
+        // Special case: projects (project wins if explicitly set)
+        merged.projects = project.projects.or(self.projects);
+
         // Special case: window_placement (project wins if explicitly set)
         merged.window_placement = project.window_placement.or(self.window_placement);
 
@@ -3589,6 +3597,17 @@ impl Config {
     /// Returns the configured value or defaults to Window.
     pub fn mode(&self) -> MuxMode {
         self.mode.unwrap_or(MuxMode::Window)
+    }
+
+    /// Configured extra project roots for the dashboard picker, tilde-expanded.
+    pub fn extra_projects(&self) -> Vec<PathBuf> {
+        self.projects
+            .iter()
+            .flatten()
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+            .map(crate::util::expand_tilde)
+            .collect()
     }
 
     /// Session to return to when a workmux-managed session closes.
@@ -4081,6 +4100,18 @@ mod tests {
     use super::{DashboardConfig, InputExitKey, RemoteConfig, RemoteIsolation};
     use crate::test_support;
     use tempfile::TempDir;
+
+    #[test]
+    fn extra_projects_expand_tilde_and_skip_blank() {
+        let config: Config =
+            serde_yaml::from_str("projects:\n  - ~/repo-a\n  - '  '\n  - /abs/repo-b\n")
+                .expect("config parses");
+        let projects = config.extra_projects();
+        assert_eq!(projects.len(), 2);
+        assert!(projects[0].ends_with("repo-a"));
+        assert!(!projects[0].starts_with("~"));
+        assert_eq!(projects[1], std::path::PathBuf::from("/abs/repo-b"));
+    }
 
     #[test]
     fn default_session_is_none_by_default() {

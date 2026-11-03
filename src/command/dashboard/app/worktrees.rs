@@ -739,6 +739,15 @@ impl App {
             by_name.entry(name).or_insert_with(|| root.clone());
         }
 
+        // Projects pinned in config are listed even without running agents
+        for root in self.config.extra_projects() {
+            if !root.is_dir() {
+                continue;
+            }
+            let name = agent::extract_project_name(&root);
+            by_name.entry(name).or_insert(root);
+        }
+
         let projects: Vec<ProjectEntry> = by_name
             .into_iter()
             .map(|(name, path)| ProjectEntry { name, path })

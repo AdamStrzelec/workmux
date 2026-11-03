@@ -87,6 +87,7 @@ Most options have sensible defaults. You only need to configure what you want to
 | `theme`            | Dashboard color scheme (see [themes](#themes))                                         | `default` (auto dark/light) |
 | `mode`             | Tmux mode (`window` or `session`). See [session mode](/guide/session-mode/).           | `window`                    |
 | `default_session`  | Session to return to when a workmux session closes (session mode)                      | Previous session            |
+| `projects`         | Extra repos always listed in the dashboard project picker (`p`). Supports `~`.         | None                        |
 | `placement`        | Where `workmux add` creates agents: `local` or a remote name. See [remotes](#remotes). | `local`                     |
 
 Set `base_branch: auto` to create new branches from the effective main branch,
