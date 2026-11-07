@@ -17,6 +17,7 @@ mod rename;
 pub mod resurrect;
 mod setup;
 pub mod types;
+pub mod worktree_dir;
 
 // Public API re-exports
 pub use agent_resolve::{

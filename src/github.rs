@@ -81,6 +81,9 @@ pub struct PrSummary {
     /// Issues GitHub reports as closed by this pull request.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub closing_issues: Vec<ClosingIssue>,
+    /// GitHub mergeability: MERGEABLE, CONFLICTING or UNKNOWN (None if not fetched).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mergeable: Option<String>,
 }
 
 /// Metadata about PR checks (timing, names) separate from aggregated state
@@ -375,6 +378,7 @@ pub fn find_pr_by_head_ref(owner: &str, branch: &str) -> Result<Option<PrSummary
         title: pr.title,
         state: pr.state,
         is_draft: pr.is_draft,
+        mergeable: None,
         checks: None,
         check_meta: None,
         url: pr.url,
@@ -500,10 +504,9 @@ pub fn get_pr_details_in(repo_root: Option<&Path>, pr_number: u32) -> Result<PrD
     Ok(pr_details)
 }
 
-const PR_LIST_FIELDS_WITH_ISSUES_AND_CHECKS: &str =
-    "number,title,state,isDraft,headRefName,url,statusCheckRollup,closingIssuesReferences";
+const PR_LIST_FIELDS_WITH_ISSUES_AND_CHECKS: &str = "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup,closingIssuesReferences";
 const PR_LIST_FIELDS_WITH_CHECKS: &str =
-    "number,title,state,isDraft,headRefName,url,statusCheckRollup";
+    "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup";
 const PR_LIST_FIELDS: &str = "number,title,state,isDraft,headRefName,url";
 const DASHBOARD_PR_LIST_FIELD_SETS: [&str; 3] = [
     PR_LIST_FIELDS_WITH_ISSUES_AND_CHECKS,
@@ -571,6 +574,8 @@ struct PrBatchItem {
     #[serde(rename = "headRefName")]
     head_ref_name: String,
     url: String,
+    #[serde(default)]
+    mergeable: Option<String>,
     #[serde(rename = "statusCheckRollup", default)]
     status_check_rollup: Vec<CheckRollupItem>,
     #[serde(rename = "closingIssuesReferences", default)]
@@ -619,6 +624,7 @@ pub fn list_prs_in(repo_root: Option<&Path>) -> Result<HashMap<String, PrSummary
                     title: pr.title,
                     state: pr.state,
                     is_draft: pr.is_draft,
+                    mergeable: pr.mergeable,
                     checks,
                     check_meta,
                     url: Some(pr.url),
@@ -698,6 +704,8 @@ struct GraphqlPrNode {
     #[serde(rename = "isDraft")]
     is_draft: bool,
     url: String,
+    #[serde(default)]
+    mergeable: Option<String>,
     commits: GraphqlCommits,
     #[serde(rename = "closingIssuesReferences", default)]
     closing_issues: Option<GraphqlClosingIssues>,
@@ -1008,7 +1016,7 @@ fn build_batch_body(remotes: &[RemoteQuery]) -> Result<Vec<u8>> {
             branches.push(format!(
                 r#"    pr_r{repo_index}_b{branch_index}: pullRequests(headRefName: ${head_var}, first: 1, states: [OPEN, MERGED, CLOSED], orderBy: {{field: CREATED_AT, direction: DESC}}) {{
       nodes {{
-        number title state isDraft url
+        number title state isDraft url mergeable
         closingIssuesReferences(first: 100) {{ nodes {{ number repository {{ name owner {{ login }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ contexts(first: 100) {{
           nodes {{ __typename ... on CheckRun {{ name status conclusion startedAt }} ... on StatusContext {{ context state createdAt }} }}
@@ -1191,6 +1199,7 @@ fn parse_branch_summary_values(
             title: node.title,
             state: node.state,
             is_draft: node.is_draft,
+            mergeable: node.mergeable,
             checks,
             check_meta,
             url: Some(node.url),
@@ -1297,6 +1306,7 @@ fn list_prs_for_branches_rest(
                     title: pr.title,
                     state: pr.state,
                     is_draft: pr.is_draft,
+                    mergeable: pr.mergeable,
                     checks,
                     check_meta,
                     url: Some(pr.url),

@@ -72,6 +72,7 @@ const WORKTREE_COLUMNS: &[Column] = &[
             ("c", "close window"),
             ("r", "remove worktree"),
             ("b", "change base branch"),
+            ("p", "PR actions"),
             ("o/O", "open PR / PR checks"),
             ("e", "open in VS Code"),
         ],
@@ -89,8 +90,8 @@ const WORKTREE_COLUMNS: &[Column] = &[
         &[
             ("/", "filter"),
             ("s", "cycle sort"),
-            ("p", "switch project"),
-            ("C", "session tabs config"),
+            ("P", "switch project"),
+            ("C", "project config (tabs, worktree dir)"),
             ("T", "cycle theme"),
         ],
     ),

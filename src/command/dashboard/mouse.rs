@@ -223,6 +223,11 @@ fn worktree_context_commands() -> Vec<PaletteCommand> {
             action: Action::ShowBaseBranchPicker,
         },
         PaletteCommand {
+            label: "PR actions",
+            key_hint: "p",
+            action: Action::ShowPrMenu,
+        },
+        PaletteCommand {
             label: "Close mux window",
             key_hint: "c",
             action: Action::CloseSelectedWorktreeWindow,
@@ -240,6 +245,8 @@ fn has_modal(app: &App) -> bool {
         || app.show_help
         || app.pending_kill_pane_id.is_some()
         || app.pending_remove.is_some()
+        || app.pending_pr_menu.is_some()
+        || app.pending_pr_confirm.is_some()
         || app.pending_base_picker.is_some()
         || app.pending_project_picker.is_some()
         || app.pending_session_config.is_some()
@@ -633,7 +640,8 @@ fn worktree_footer_items(app: &App) -> Vec<FooterItem> {
             format!("s Sort ({})", app.worktree_sort_mode.label()),
             Action::CycleWorktreeSortMode,
         ),
-        FooterItem::action("p Project", Action::ShowProjectPicker),
+        FooterItem::action("p PR menu", Action::ShowPrMenu),
+        FooterItem::action("P Project", Action::ShowProjectPicker),
     ];
     if !app.worktree_filter_text.is_empty() {
         items.push(FooterItem::action(

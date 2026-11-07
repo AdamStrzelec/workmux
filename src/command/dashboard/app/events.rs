@@ -37,6 +37,7 @@ impl App {
                 self.git_statuses.insert(path, status);
             }
             AppEvent::GithubStatus(repo_root, summaries) => {
+                self.prs_loaded = true;
                 let mut prs = std::collections::HashMap::new();
                 let mut checks = std::collections::HashMap::new();
                 for (branch, summary) in summaries {
@@ -80,6 +81,12 @@ impl App {
             }
             AppEvent::RemoveWorktreeResult(path, result) => {
                 self.handle_remove_worktree_result(path, result);
+            }
+            AppEvent::PrActionResult(outcome) => {
+                self.handle_pr_action_result(outcome);
+            }
+            AppEvent::WorktreeMoveResult(result) => {
+                self.handle_worktree_move_result(result);
             }
             AppEvent::AddWorktreeResult(result) => {
                 self.handle_add_worktree_result(result);

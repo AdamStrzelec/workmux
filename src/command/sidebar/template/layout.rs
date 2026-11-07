@@ -644,6 +644,7 @@ mod tests {
             title: "Add PR status".to_string(),
             state: "OPEN".to_string(),
             is_draft: false,
+            mergeable: None,
             checks: Some(CheckState::Failure {
                 passed: 2,
                 total: 3,

@@ -944,7 +944,8 @@ fn render_worktree_footer_normal(f: &mut Frame, app: &App, area: Rect) {
         footer_cmd("o", "PR", dimmed, bold_text),
         footer_cmd("1-9", "Jump", dimmed, bold_text),
         footer_toggle("s", "Sort", sort, true, dimmed, bold_text, active_style),
-        footer_cmd("p", "Project", dimmed, bold_text),
+        footer_cmd("p", "PR menu", dimmed, bold_text),
+        footer_cmd("P", "Project", dimmed, bold_text),
     ];
     if !app.worktree_filter_text.is_empty() {
         items.push(footer_cmd(

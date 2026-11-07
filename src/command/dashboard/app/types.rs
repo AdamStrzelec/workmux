@@ -45,6 +45,10 @@ pub enum AppEvent {
         bool,
         Result<crate::remote::agents::CachedDiff, String>,
     ),
+    /// Result of a confirmed PR action from the PR submenu
+    PrActionResult(super::PrActionOutcome),
+    /// Result of moving worktrees from the project config editor
+    WorktreeMoveResult(Result<String, String>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

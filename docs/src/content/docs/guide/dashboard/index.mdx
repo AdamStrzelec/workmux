@@ -91,13 +91,64 @@ Agent jumps close the dashboard by default. See [`close_on_jump`](/guide/dashboa
 | `c`      | Close mux window (keeps worktree)      |
 | `R`      | Sweep (bulk remove merged/gone)        |
 | `s`      | Cycle sort mode                        |
-| `p`      | Switch project                         |
+| `p`      | PR actions menu (see below)            |
+| `P`      | Switch project                         |
+| `C`      | Project config (tabs, worktree dir)    |
 | `/`      | Filter worktrees by name/branch        |
 | `j`/`k`  | Navigate up/down                       |
 | `T`      | Cycle theme                            |
 | `:`      | Open command palette                   |
 | `q`      | Quit                                   |
 | `Ctrl+c` | Quit (works from any view)             |
+
+### PR actions menu
+
+Press `p` on a worktree to open the PR actions menu. Every action shows the
+commands it will run and waits for `y` before running them in the background.
+Entries that cannot run are dimmed with a short reason (no `gh`, no PR, PR not
+open, draft, conflicts, failing CI, PRs still loading).
+
+| Key       | Action                                                                     |
+| --------- | -------------------------------------------------------------------------- |
+| `p`       | Push the branch (`git push -u origin`, no force); create a draft PR if none is open |
+| `d`       | Toggle the PR between draft and ready for review                           |
+| `m`       | Merge the PR (`gh pr merge --merge`)                                       |
+| `M`       | Merge the PR, then remove the worktree and local branch                    |
+| `c`       | Close the PR without merging                                               |
+| `h`/`Esc` | Back                                                                       |
+
+New PRs target the worktree's base branch (set with `b`), or the default branch.
+
+### Project config
+
+Press `C` to edit the project's `.workmux.yaml`: session tabs and the
+worktree directory. Opening the editor never writes anything; `s` saves. Only
+the changed keys are rewritten, other lines and comments are kept.
+
+Press `w` to edit the worktree directory ([`worktree_dir`](/guide/configuration/)).
+The **Current** line shows the directory `workmux add` uses right now and why.
+Resolution order (the same for `workmux add` and the editor):
+
+1. **configured in project**: `worktree_dir` in `.workmux.yaml`
+2. **configured globally**: `worktree_dir` in `~/.config/workmux/config.yaml`
+3. **detected from existing worktrees**: nothing is configured, but a strict
+   majority of the existing worktrees live in one directory other than the
+   default (for example `.claude/worktrees`). New worktrees go there too. The
+   field is prefilled with that directory (relative to the repo root when
+   inside it, `~/...` under home); `s` pins it in the project config
+4. **workmux default**: `<project>__worktrees` next to the repository
+
+An empty value removes the project `worktree_dir`. Saving applies to new
+worktrees only.
+
+Press `m` to move existing worktrees. Type the new directory (same syntax as
+`worktree_dir`) and press Enter: a confirmation lists every
+`git worktree move <old> <new>` command. Only worktrees directly in the
+current directory are moved; others are listed as untouched. The move is
+refused as a whole when a worktree is locked, has an open tmux window or a
+running agent, or its target path already exists. `y` runs the moves in the
+background (never with `--force`), then saves `worktree_dir`; if a move fails
+the rest is skipped and the config is left unchanged.
 
 Worktree jumps follow the [`close_on_jump`](/guide/dashboard/configuration/#staying-open-after-a-jump) setting.
 

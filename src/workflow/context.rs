@@ -63,22 +63,19 @@ fn paths_identify_same_worktree(path: &Path, main_worktree_root: &Path) -> bool 
 }
 
 impl WorkflowContext {
-    /// Directory new worktrees of this repository go in: `worktree_dir`, or
-    /// `<project>__worktrees` beside the main worktree.
+    /// Directory new worktrees of this repository go in. See
+    /// `workflow::worktree_dir::resolve_worktree_dir` for the resolution
+    /// order (configured, detected from existing worktrees, default).
     pub fn worktree_base_dir(&self) -> Result<PathBuf> {
-        if let Some(ref worktree_dir) = self.config.worktree_dir {
-            return crate::util::expand_worktree_dir(worktree_dir, &self.main_worktree_root);
-        }
-        let project_name = self
-            .main_worktree_root
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| anyhow::anyhow!("Could not determine project name"))?;
-        Ok(self
-            .main_worktree_root
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("Could not determine parent directory"))?
-            .join(format!("{}__worktrees", project_name)))
+        let main = &self.main_worktree_root;
+        Ok(super::worktree_dir::resolve_worktree_dir(
+            self.config.worktree_dir.as_deref(),
+            None,
+            main,
+            || super::worktree_dir::list_worktree_paths(main),
+            home::home_dir().as_deref(),
+        )?
+        .dir)
     }
 
     /// Create a new workflow context

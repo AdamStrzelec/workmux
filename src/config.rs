@@ -3119,6 +3119,11 @@ impl Config {
         Ok(None)
     }
 
+    /// `worktree_dir` from the global config file, if set.
+    pub fn global_worktree_dir() -> Option<String> {
+        Self::load_global().ok().flatten()?.worktree_dir
+    }
+
     /// Merge a project config into a global config.
     /// Project config takes precedence. For lists, "<global>" placeholder expands to global items.
     fn merge(self, project: Self) -> Self {
@@ -3625,7 +3630,7 @@ impl Config {
     }
 
     /// Create an example .workmux.yaml configuration file
-    pub fn init() -> anyhow::Result<()> {
+    pub fn init(worktree_dir: Option<&str>) -> anyhow::Result<()> {
         use std::path::PathBuf;
 
         let config_path = PathBuf::from(".workmux.yaml");
@@ -3636,9 +3641,13 @@ impl Config {
             ));
         }
 
-        fs::write(&config_path, EXAMPLE_PROJECT_CONFIG)?;
+        fs::write(&config_path, init_config_text(worktree_dir))?;
 
         println!("✓ Created .workmux.yaml");
+        match worktree_dir {
+            Some(dir) => println!("  Worktree directory: {}", dir),
+            None => println!("  Worktree directory: default (sibling '<project>__worktrees')"),
+        }
         println!("\nThis file provides project-specific overrides.");
         println!(
             "For global settings, edit {}",
@@ -3648,6 +3657,30 @@ impl Config {
         );
 
         Ok(())
+    }
+}
+
+/// Commented `worktree_dir` example line in [`EXAMPLE_PROJECT_CONFIG`].
+pub const WORKTREE_DIR_EXAMPLE_LINE: &str = "# worktree_dir: .worktrees\n";
+
+/// Render a string as a single-line YAML scalar, quoting when needed
+/// (e.g. `{project}`, `:`, `#`).
+pub fn yaml_scalar(value: &str) -> String {
+    serde_yaml::to_string(value)
+        .map(|v| v.trim_end().to_string())
+        .unwrap_or_else(|_| format!("{:?}", value))
+}
+
+/// Build the `.workmux.yaml` text written by `workmux init`.
+/// With `worktree_dir`, the commented example line is replaced by an active setting.
+pub fn init_config_text(worktree_dir: Option<&str>) -> String {
+    match worktree_dir {
+        None => EXAMPLE_PROJECT_CONFIG.to_string(),
+        Some(dir) => EXAMPLE_PROJECT_CONFIG.replacen(
+            WORKTREE_DIR_EXAMPLE_LINE,
+            &format!("worktree_dir: {}\n", yaml_scalar(dir)),
+            1,
+        ),
     }
 }
 
@@ -4081,6 +4114,33 @@ pub fn is_agent_command(command_line: &str, agent_command: &str) -> bool {
     let agent_stem = Path::new(&resolved_agent).file_stem();
 
     cmd_stem.is_some() && cmd_stem == agent_stem
+}
+
+#[cfg(test)]
+mod init_config_tests {
+    use super::{Config, EXAMPLE_PROJECT_CONFIG, init_config_text};
+
+    #[test]
+    fn without_dir_is_unchanged() {
+        assert_eq!(init_config_text(None), EXAMPLE_PROJECT_CONFIG);
+    }
+
+    #[test]
+    fn with_dir_sets_active_worktree_dir() {
+        let text = init_config_text(Some(".trees"));
+        assert!(text.contains("\nworktree_dir: .trees\n"));
+        assert!(!text.contains("# worktree_dir: .worktrees"));
+        let cfg: Config = serde_yaml::from_str(&text).unwrap();
+        assert_eq!(cfg.worktree_dir.as_deref(), Some(".trees"));
+    }
+
+    #[test]
+    fn with_dir_quotes_special_values() {
+        for dir in ["~/.workmux/{project}", "a: b", "x #y", "my trees"] {
+            let cfg: Config = serde_yaml::from_str(&init_config_text(Some(dir))).unwrap();
+            assert_eq!(cfg.worktree_dir.as_deref(), Some(dir));
+        }
+    }
 }
 
 #[cfg(test)]

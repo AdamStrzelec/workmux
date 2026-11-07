@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Cell, Paragraph, Row, Table},
 };
 
-use super::super::app::{App, RowContextKind, SessionTabField};
+use super::super::app::{App, RowContextKind, SessionTabField, WorktreeDirSource};
 use super::super::keymap::{Context, help_rows};
 use super::popup::{centered_rect, popup_block, render_popup};
 use super::theme::ThemePalette;
@@ -1007,6 +1007,58 @@ pub fn render_session_config(f: &mut Frame, app: &App) {
         Line::from(""),
     ];
 
+    // Worktree directory setting.
+    let wd = &editor.worktree_dir;
+    let dir_text = match editor.dir_edit.as_ref() {
+        Some(buffer) => format!("{buffer}_"),
+        None if wd.value.is_empty() => format!("(default) {}", wd.default_display),
+        None => wd.value.clone(),
+    };
+    let hint = match (wd.configured.is_some(), wd.source()) {
+        (true, _) => "saved in project config".to_string(),
+        (false, WorktreeDirSource::Detected) => "detected, save to pin it in config".to_string(),
+        (false, WorktreeDirSource::Global) => "not set in project, global applies".to_string(),
+        (false, _) => "not set".to_string(),
+    };
+    let mut dir_spans = vec![
+        Span::styled(" Worktree dir: ", Style::default().fg(palette.dimmed)),
+        Span::styled(
+            dir_text,
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!("  ({hint})"), Style::default().fg(palette.dimmed)),
+    ];
+    if wd.needs_write() {
+        dir_spans.push(Span::styled("  *", Style::default().fg(palette.success)));
+    }
+    lines.push(Line::from(dir_spans));
+    lines.push(Line::from(Span::styled(
+        format!(
+            " Current: {} ({}). Saving affects new worktrees only; m moves existing ones.",
+            wd.effective_display,
+            wd.source().label()
+        ),
+        Style::default().fg(palette.dimmed),
+    )));
+    if let Some(buffer) = editor.move_edit.as_ref() {
+        lines.push(Line::from(vec![
+            Span::styled(" Move worktrees to: ", Style::default().fg(palette.dimmed)),
+            Span::styled(
+                format!("{buffer}_"),
+                Style::default()
+                    .fg(palette.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " Tabs",
+        Style::default().fg(palette.dimmed),
+    )));
+
     let name_w = editor
         .tabs
         .iter()
@@ -1070,7 +1122,15 @@ pub fn render_session_config(f: &mut Frame, app: &App) {
     }
 
     lines.push(Line::from(""));
-    if editor.edit.is_some() {
+    if editor.dir_edit.is_some() {
+        lines.push(render_modal_footer_row(
+            palette,
+            &[
+                ("Enter", " confirm (empty = default)  "),
+                ("Esc", " cancel edit"),
+            ],
+        ));
+    } else if editor.edit.is_some() || editor.move_edit.is_some() {
         lines.push(render_modal_footer_row(
             palette,
             &[("Enter", " confirm  "), ("Esc", " cancel edit")],
@@ -1087,10 +1147,19 @@ pub fn render_session_config(f: &mut Frame, app: &App) {
                 ("f", " focus"),
             ],
         ));
-        let save_label = if editor.dirty { " save*  " } else { " save  " };
+        let save_label = if editor.dirty || editor.worktree_dir.needs_write() {
+            " save*  "
+        } else {
+            " save  "
+        };
         lines.push(render_modal_footer_row(
             palette,
-            &[("s", save_label), ("Esc", " cancel")],
+            &[
+                ("w", " worktree dir  "),
+                ("m", " move worktrees  "),
+                ("s", save_label),
+                ("Esc", " cancel"),
+            ],
         ));
     }
 
@@ -1098,6 +1167,85 @@ pub fn render_session_config(f: &mut Frame, app: &App) {
     let width = (content_width as u16 + 4).clamp(50, f.area().width.saturating_sub(4));
     let height = lines.len() as u16 + 2;
     let area = centered_rect(f.area(), width, height);
-    let block = popup_block(Some("Session Tabs"), palette);
+    let block = popup_block(Some("Project Config"), palette);
+    render_popup(f, area, Paragraph::new(Text::from(lines)).block(block));
+    if let Some(plan) = editor.move_plan.as_ref() {
+        render_worktree_move_confirm(f, palette, plan, &editor.repo_root);
+    }
+}
+
+/// Confirmation popup listing each `old -> new` worktree move.
+fn render_worktree_move_confirm(
+    f: &mut Frame,
+    palette: &ThemePalette,
+    plan: &crate::workflow::worktree_dir::MovePlan,
+    root: &std::path::Path,
+) {
+    use crate::workflow::worktree_dir::{MoveEntry, format_worktree_dir};
+    let home = home::home_dir();
+    let show = |p: &std::path::Path| format_worktree_dir(p, root, home.as_deref());
+    let dim = Style::default().fg(palette.dimmed);
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!(" {} -> {}", show(&plan.from_dir), show(&plan.to_dir)),
+            Style::default()
+                .fg(palette.text)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+    let moves = plan.moves();
+    for entry in &plan.entries {
+        lines.push(match entry {
+            MoveEntry::Move { from, to } => Line::from(Span::styled(
+                format!("   git worktree move {} {}", show(from), show(to)),
+                Style::default().fg(palette.text),
+            )),
+            MoveEntry::Blocked { path, reason } => Line::from(Span::styled(
+                format!(" x {} ({reason})", show(path)),
+                Style::default().fg(palette.danger),
+            )),
+            MoveEntry::Outside { path } => Line::from(Span::styled(
+                format!("   {} (outside current dir, untouched)", show(path)),
+                dim,
+            )),
+        });
+    }
+    if plan.entries.is_empty() {
+        lines.push(Line::from(Span::styled(" No worktrees to move.", dim)));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        format!(" Then saves worktree_dir: {}", plan.template),
+        dim,
+    )));
+    lines.push(Line::from(""));
+    if plan.blocked() {
+        lines.push(Line::from(Span::styled(
+            " Cannot move: close/unlock the marked worktrees first.",
+            Style::default().fg(palette.danger),
+        )));
+        lines.push(render_modal_footer_row(palette, &[("Esc", " back")]));
+    } else {
+        lines.push(render_modal_footer_row(
+            palette,
+            &[
+                (
+                    "y",
+                    if moves.is_empty() {
+                        " save  "
+                    } else {
+                        " move + save  "
+                    },
+                ),
+                ("n", " cancel"),
+            ],
+        ));
+    }
+    let content_width = lines.iter().map(Line::width).max().unwrap_or(40);
+    let width = (content_width as u16 + 4).clamp(50, f.area().width.saturating_sub(4));
+    let height = (lines.len() as u16 + 2).min(f.area().height);
+    let area = centered_rect(f.area(), width, height);
+    let block = popup_block(Some("Move Worktrees"), palette);
     render_popup(f, area, Paragraph::new(Text::from(lines)).block(block));
 }

@@ -1013,6 +1013,7 @@ mod tests {
             title: "Add thing".to_string(),
             state: "OPEN".to_string(),
             is_draft: false,
+            mergeable: None,
             checks: Some(CheckState::Success),
             check_meta: None,
             url: None,

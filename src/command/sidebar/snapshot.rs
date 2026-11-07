@@ -483,6 +483,7 @@ mod tests {
             title: "test".to_string(),
             state: "OPEN".to_string(),
             is_draft: false,
+            mergeable: None,
             checks: None,
             check_meta: None,
             url: None,

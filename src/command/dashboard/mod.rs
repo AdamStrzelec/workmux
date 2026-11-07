@@ -384,6 +384,32 @@ fn handle_terminal_event(
         return;
     }
 
+    // PR action confirmation: y confirms, anything else cancels
+    if app.pending_pr_confirm.is_some() {
+        if key.code == crossterm::event::KeyCode::Char('y') {
+            app.confirm_pr_action();
+        } else {
+            app.pending_pr_confirm = None;
+        }
+        return;
+    }
+
+    // PR action submenu
+    if app.pending_pr_menu.is_some() {
+        match key.code {
+            crossterm::event::KeyCode::Esc
+            | crossterm::event::KeyCode::Char('h')
+            | crossterm::event::KeyCode::Char('q') => app.pending_pr_menu = None,
+            crossterm::event::KeyCode::Char(c) => {
+                if let Some(kind) = app::PrActionKind::from_key(c) {
+                    app.pr_menu_select(kind);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+
     // Remove worktree confirmation modal
     if app.pending_remove.is_some() {
         match key.code {
@@ -416,6 +442,38 @@ fn handle_terminal_event(
     // Session tabs config modal
     if let Some(editor) = app.pending_session_config.as_mut() {
         use crossterm::event::KeyCode;
+        if editor.move_plan.is_some() {
+            match key.code {
+                KeyCode::Char('y') => app.confirm_worktree_move(),
+                KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => editor.move_plan = None,
+                _ => {}
+            }
+            return;
+        }
+        if let Some(buffer) = editor.move_edit.as_mut() {
+            match key.code {
+                KeyCode::Enter => app.plan_worktree_move(),
+                KeyCode::Esc => editor.move_edit = None,
+                KeyCode::Backspace => {
+                    buffer.pop();
+                }
+                KeyCode::Char(c) => buffer.push(c),
+                _ => {}
+            }
+            return;
+        }
+        if let Some(buffer) = editor.dir_edit.as_mut() {
+            match key.code {
+                KeyCode::Enter => editor.commit_dir_edit(),
+                KeyCode::Esc => editor.dir_edit = None,
+                KeyCode::Backspace => {
+                    buffer.pop();
+                }
+                KeyCode::Char(c) => buffer.push(c),
+                _ => {}
+            }
+            return;
+        }
         if let Some(edit) = editor.edit.as_mut() {
             match key.code {
                 KeyCode::Enter => editor.commit_edit(),
@@ -436,6 +494,8 @@ fn handle_terminal_event(
             KeyCode::Char('a') => editor.add_tab(),
             KeyCode::Char('d') => editor.delete_tab(),
             KeyCode::Char('f') => editor.set_focus(),
+            KeyCode::Char('w') => editor.start_dir_edit(),
+            KeyCode::Char('m') => app.start_worktree_move(),
             KeyCode::Char('n') => editor.start_edit(SessionTabField::Name),
             KeyCode::Enter | KeyCode::Char('e') => editor.start_edit(SessionTabField::Command),
             KeyCode::Char('s') => app.save_session_config(),

@@ -4,11 +4,13 @@ mod agents;
 mod appearance;
 mod background;
 mod events;
+mod pr_actions;
 mod preview;
 mod session_config;
 mod types;
 mod worktrees;
 
+pub use pr_actions::*;
 pub use session_config::*;
 pub use types::*;
 
@@ -154,6 +156,12 @@ pub struct App {
     pub pending_session_config: Option<SessionConfigEditor>,
     /// Pending base branch picker state (shown in base picker modal)
     pub pending_base_picker: Option<BaseBranchPicker>,
+    /// PR action submenu (worktrees tab)
+    pub pending_pr_menu: Option<PrMenu>,
+    /// PR action confirmation popup
+    pub pending_pr_confirm: Option<PrConfirm>,
+    /// Whether a GitHub status fetch has completed since startup
+    prs_loaded: bool,
     /// Pending add-worktree modal state
     pub pending_add_worktree: Option<AddWorktreeState>,
     /// Active sweep progress overlay (blocks input while removing worktrees)
@@ -307,6 +315,9 @@ impl App {
             pending_project_picker: None,
             pending_session_config: None,
             pending_base_picker: None,
+            pending_pr_menu: None,
+            pending_pr_confirm: None,
+            prs_loaded: false,
             pending_add_worktree: None,
             worktree_project_override: None,
             is_worktree_fetching: Arc::new(AtomicBool::new(false)),

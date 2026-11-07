@@ -6,6 +6,7 @@ mod format;
 mod help;
 mod key_menu;
 mod popup;
+mod pr_menu;
 pub mod theme;
 pub mod worktree;
 
@@ -35,6 +36,7 @@ pub use self::help::{
     render_session_config, render_sweep, render_sweep_progress,
 };
 pub use self::key_menu::render_key_menu;
+use self::pr_menu::{render_pr_confirm, render_pr_menu};
 
 /// Main UI entry point - renders the appropriate view based on app state.
 pub fn ui(f: &mut Frame, app: &mut App) {
@@ -52,6 +54,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         || app.show_key_menu
         || app.pending_kill_pane_id.is_some()
         || app.pending_remove.is_some()
+        || app.pending_pr_menu.is_some()
+        || app.pending_pr_confirm.is_some()
         || app.pending_base_picker.is_some()
         || app.pending_project_picker.is_some()
         || app.pending_session_config.is_some()
@@ -74,6 +78,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         render_confirm_kill(f, app);
     } else if app.pending_remove.is_some() {
         render_confirm_remove(f, app);
+    } else if app.pending_pr_confirm.is_some() {
+        render_pr_confirm(f, app);
+    } else if app.pending_pr_menu.is_some() {
+        render_pr_menu(f, app);
     } else if app.pending_row_context.is_some() {
         render_row_context(f, app);
     } else if app.pending_command_palette.is_some() {

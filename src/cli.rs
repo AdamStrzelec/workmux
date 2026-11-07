@@ -690,7 +690,13 @@ enum Commands {
     },
 
     /// Generate example .workmux.yaml configuration file
-    Init,
+    Init {
+        /// Directory where worktrees are created (written as an active
+        /// `worktree_dir` setting). Relative to repo root or absolute;
+        /// supports `~` and `{project}`.
+        #[arg(short = 'w', long = "worktree-dir", value_name = "DIR")]
+        worktree_dir: Option<String>,
+    },
 
     /// Set up agent status tracking hooks and install skills
     Setup {
@@ -957,7 +963,7 @@ fn should_prompt_nerdfont(cmd: &Commands) -> bool {
         && matches!(
             cmd,
             Commands::Add { .. }
-                | Commands::Init
+                | Commands::Init { .. }
                 | Commands::Dashboard { .. }
                 | Commands::List { .. }
         )
@@ -970,7 +976,7 @@ fn should_prompt_status_setup(cmd: &Commands) -> bool {
     !is_headless_add(cmd)
         && matches!(
             cmd,
-            Commands::Add { .. } | Commands::Init | Commands::List { .. }
+            Commands::Add { .. } | Commands::Init { .. } | Commands::List { .. }
         )
 }
 
@@ -1291,7 +1297,7 @@ pub fn run() -> Result<()> {
         }
         Commands::Exec { run_dir } => command::exec::run(&run_dir),
         Commands::SyncFiles { all } => command::sync_files::run(all),
-        Commands::Init => crate::config::Config::init(),
+        Commands::Init { worktree_dir } => crate::config::Config::init(worktree_dir.as_deref()),
         Commands::Setup { hooks, skills } => command::setup::run(hooks, skills),
         Commands::Uninstall { dry_run } => command::uninstall::run(dry_run),
         Commands::Docs => command::docs::run(),

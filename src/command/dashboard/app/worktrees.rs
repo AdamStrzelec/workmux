@@ -222,6 +222,11 @@ impl App {
         self.last_worktree_fetch = std::time::Instant::now() - Duration::from_secs(60);
     }
 
+    /// Reset the PR fetch timer so GitHub status is refetched on the next tick.
+    pub fn trigger_pr_refetch(&mut self) {
+        self.last_pr_fetch = std::time::Instant::now() - super::PR_FETCH_INTERVAL;
+    }
+
     /// Switch between Agents and Worktrees tabs
     pub fn switch_tab(&mut self) {
         self.active_tab = match self.active_tab {
@@ -1540,6 +1545,7 @@ mod tests {
             title: format!("PR {number}"),
             state: "OPEN".into(),
             is_draft: false,
+            mergeable: None,
             checks: None,
             check_meta: None,
             url: None,

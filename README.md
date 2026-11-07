@@ -1568,7 +1568,8 @@ discovering available options or piping to an AI agent for context.
 ### `workmux init`
 
 Generates `.workmux.yaml` with example configuration and `"<global>"`
-placeholder usage.
+placeholder usage. Pass `--worktree-dir <DIR>` (`-w`) to write an active
+`worktree_dir` setting into the generated file.
 
 ---
 
