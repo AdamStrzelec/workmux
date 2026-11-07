@@ -73,6 +73,7 @@ const WORKTREE_COLUMNS: &[Column] = &[
             ("r", "remove worktree"),
             ("b", "change base branch"),
             ("p", "PR actions"),
+            ("x", "run tools"),
             ("o/O", "open PR / PR checks"),
             ("e", "open in VS Code"),
         ],

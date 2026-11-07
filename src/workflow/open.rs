@@ -405,6 +405,57 @@ pub fn open(
         options.primary_window = !new_window || !target_exists;
     }
 
+    // Resume the Claude session saved when the window was closed from the
+    // dashboard. The saved id is consumed so a later plain open starts fresh.
+    {
+        use crate::multiplexer::conversation::{ClaudeForker, ConversationForker};
+        let saved = git::get_worktree_meta_in(
+            &base_handle,
+            git::CLAUDE_SESSION_META,
+            Some(&context.execution_dir),
+        );
+        if saved.is_some() {
+            let enabled = context
+                .config
+                .claude
+                .as_ref()
+                .is_none_or(|c| c.resume_on_reopen());
+            let session_dir = if context.config_rel_dir.as_os_str().is_empty() {
+                worktree_path.clone()
+            } else {
+                worktree_path.join(&context.config_rel_dir)
+            };
+            let resume = crate::claude_launch::session_to_resume(
+                enabled,
+                options.resume_mode != crate::multiplexer::types::ResumeMode::None,
+                new_window,
+                saved,
+                |id| {
+                    [session_dir.as_path(), worktree_path.as_path()]
+                        .iter()
+                        .any(|dir| {
+                            matches!(ClaudeForker::new().find_conversation(dir, id), Ok(Some(s)) if s.id == id)
+                        })
+                },
+            );
+            if !new_window {
+                let _ = git::unset_worktree_meta_in(
+                    &base_handle,
+                    git::CLAUDE_SESSION_META,
+                    Some(&context.execution_dir),
+                );
+            }
+            if let Some(id) = resume {
+                info!(
+                    handle = base_handle,
+                    session = id,
+                    "open:resuming claude session"
+                );
+                options.resume_mode = crate::multiplexer::types::ResumeMode::ForkSession(id);
+            }
+        }
+    }
+
     // Determine handle: use suffix if forcing new target and one exists
     let handle = if new_window && target_exists {
         resolve_unique_handle(context, target_name)?

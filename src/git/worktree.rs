@@ -367,6 +367,22 @@ pub fn set_worktree_meta_in(
     Ok(())
 }
 
+/// Remove one per-worktree metadata key (missing key is not an error).
+pub fn unset_worktree_meta_in(handle: &str, key: &str, workdir: Option<&Path>) -> Result<()> {
+    let config_key = format!("workmux.worktree.{}.{}", handle, key);
+    let cmd = Cmd::new("git").args(&["config", "--local", "--unset-all", &config_key]);
+    let cmd = match workdir {
+        Some(path) => cmd.workdir(path),
+        None => cmd,
+    };
+    // Exit code 5 = key not set; treat every failure as "nothing to remove".
+    let _ = cmd.run_as_check();
+    Ok(())
+}
+
+/// Worktree metadata key holding the Claude session saved on close.
+pub const CLAUDE_SESSION_META: &str = "claude-session";
+
 /// Retrieve per-worktree metadata from git config.
 /// Returns None if the key doesn't exist.
 #[allow(dead_code)]

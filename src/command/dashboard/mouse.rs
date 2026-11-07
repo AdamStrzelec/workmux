@@ -228,6 +228,11 @@ fn worktree_context_commands() -> Vec<PaletteCommand> {
             action: Action::ShowPrMenu,
         },
         PaletteCommand {
+            label: "Run tools",
+            key_hint: "x",
+            action: Action::ShowToolMenu,
+        },
+        PaletteCommand {
             label: "Close mux window",
             key_hint: "c",
             action: Action::CloseSelectedWorktreeWindow,
@@ -246,6 +251,7 @@ fn has_modal(app: &App) -> bool {
         || app.pending_kill_pane_id.is_some()
         || app.pending_remove.is_some()
         || app.pending_pr_menu.is_some()
+        || app.pending_tool_menu.is_some()
         || app.pending_pr_confirm.is_some()
         || app.pending_base_picker.is_some()
         || app.pending_project_picker.is_some()

@@ -209,6 +209,25 @@ pub fn shell_join(args: &[String]) -> String {
         .join(" ")
 }
 
+/// Session to resume when (re)opening a worktree window: the saved one,
+/// when resume is enabled, nothing else asked for a resume mode, this is not
+/// an extra `--new` window and the transcript still exists.
+pub fn session_to_resume(
+    enabled: bool,
+    other_resume_requested: bool,
+    new_window: bool,
+    saved: Option<String>,
+    transcript_exists: impl FnOnce(&str) -> bool,
+) -> Option<String> {
+    if !enabled || other_resume_requested || new_window {
+        return None;
+    }
+    let saved = saved
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())?;
+    transcript_exists(&saved).then_some(saved)
+}
+
 /// One run tool: a command started in its own tmux window.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ToolConfig {
@@ -469,6 +488,24 @@ mod tests {
         assert_eq!(
             merge_launch_args(&[], cfg("model: opus").build_args()),
             s(&["--model", "opus"])
+        );
+    }
+
+    #[test]
+    fn session_to_resume_rules() {
+        let id = || Some("abc".to_string());
+        assert_eq!(
+            session_to_resume(true, false, false, id(), |_| true),
+            Some("abc".into())
+        );
+        assert_eq!(session_to_resume(false, false, false, id(), |_| true), None);
+        assert_eq!(session_to_resume(true, true, false, id(), |_| true), None);
+        assert_eq!(session_to_resume(true, false, true, id(), |_| true), None);
+        assert_eq!(session_to_resume(true, false, false, id(), |_| false), None);
+        assert_eq!(session_to_resume(true, false, false, None, |_| true), None);
+        assert_eq!(
+            session_to_resume(true, false, false, Some(" ".into()), |_| true),
+            None
         );
     }
 

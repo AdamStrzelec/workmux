@@ -410,6 +410,16 @@ fn handle_terminal_event(
         return;
     }
 
+    // Run tools menu
+    if app.pending_tool_menu.is_some() {
+        match key.code {
+            crossterm::event::KeyCode::Esc => app.pending_tool_menu = None,
+            crossterm::event::KeyCode::Char(c) => app.tool_menu_select(c),
+            _ => {}
+        }
+        return;
+    }
+
     // Remove worktree confirmation modal
     if app.pending_remove.is_some() {
         match key.code {

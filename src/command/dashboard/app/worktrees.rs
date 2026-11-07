@@ -471,6 +471,7 @@ impl App {
         if !self.removals.start(plan.path.clone()) {
             return;
         }
+        self.kill_tool_windows(&plan.handle);
         let mux = self.mux.clone();
         let tx = self.event_tx.clone();
         std::thread::spawn(move || {
@@ -523,13 +524,31 @@ impl App {
         if self.removals.contains(&worktree.path) {
             return;
         }
+        let (handle, path) = (worktree.handle.clone(), worktree.path.clone());
+        let closed_tools = if self.close_tools_with_session(&path) {
+            self.kill_tool_windows(&handle)
+        } else {
+            0
+        };
+        let Some(worktree) = self.worktrees.get(selected) else {
+            return;
+        };
         if !worktree.has_mux_window {
-            self.status_message = Some((
-                format!("'{}' has no open window", worktree.handle),
-                std::time::Instant::now(),
-            ));
+            let message = if closed_tools > 0 {
+                format!("Closed {closed_tools} tool window(s) of '{handle}'")
+            } else {
+                format!("'{handle}' has no open window")
+            };
+            self.status_message = Some((message, std::time::Instant::now()));
+            if closed_tools > 0 {
+                self.trigger_worktree_refetch();
+            }
             return;
         }
+        self.save_claude_session(&handle, &path);
+        let Some(worktree) = self.worktrees.get(selected) else {
+            return;
+        };
 
         // Read worktree metadata from the worktree's own repo, not the
         // dashboard's CWD (which may be outside the repository in a popup).

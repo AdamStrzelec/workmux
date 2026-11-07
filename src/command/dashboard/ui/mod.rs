@@ -8,6 +8,7 @@ mod key_menu;
 mod popup;
 mod pr_menu;
 pub mod theme;
+mod tool_menu;
 pub mod worktree;
 
 use ratatui::Frame;
@@ -37,6 +38,7 @@ pub use self::help::{
 };
 pub use self::key_menu::render_key_menu;
 use self::pr_menu::{render_pr_confirm, render_pr_menu};
+use self::tool_menu::render_tool_menu;
 
 /// Main UI entry point - renders the appropriate view based on app state.
 pub fn ui(f: &mut Frame, app: &mut App) {
@@ -55,6 +57,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         || app.pending_kill_pane_id.is_some()
         || app.pending_remove.is_some()
         || app.pending_pr_menu.is_some()
+        || app.pending_tool_menu.is_some()
         || app.pending_pr_confirm.is_some()
         || app.pending_base_picker.is_some()
         || app.pending_project_picker.is_some()
@@ -82,6 +85,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         render_pr_confirm(f, app);
     } else if app.pending_pr_menu.is_some() {
         render_pr_menu(f, app);
+    } else if app.pending_tool_menu.is_some() {
+        render_tool_menu(f, app);
     } else if app.pending_row_context.is_some() {
         render_row_context(f, app);
     } else if app.pending_command_palette.is_some() {

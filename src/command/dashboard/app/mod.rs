@@ -6,11 +6,13 @@ mod background;
 mod events;
 mod pr_actions;
 mod preview;
+mod run_tools;
 mod session_config;
 mod types;
 mod worktrees;
 
 pub use pr_actions::*;
+pub use run_tools::*;
 pub use session_config::*;
 pub use types::*;
 
@@ -160,6 +162,8 @@ pub struct App {
     pub pending_pr_menu: Option<PrMenu>,
     /// PR action confirmation popup
     pub pending_pr_confirm: Option<PrConfirm>,
+    /// Run tools menu (worktrees tab)
+    pub pending_tool_menu: Option<ToolMenu>,
     /// Whether a GitHub status fetch has completed since startup
     prs_loaded: bool,
     /// Pending add-worktree modal state
@@ -316,6 +320,7 @@ impl App {
             pending_session_config: None,
             pending_base_picker: None,
             pending_pr_menu: None,
+            pending_tool_menu: None,
             pending_pr_confirm: None,
             prs_loaded: false,
             pending_add_worktree: None,

@@ -81,6 +81,7 @@ pub enum Action {
     JumpToSelectedWorktree,
     ShowProjectPicker,
     ShowPrMenu,
+    ShowToolMenu,
     ShowSessionConfig,
     ShowBaseBranchPicker,
     AddWorktree,
@@ -310,6 +311,10 @@ pub fn apply_action(app: &mut App, action: Action) -> bool {
         }
         Action::ShowPrMenu => {
             app.show_pr_menu();
+            false
+        }
+        Action::ShowToolMenu => {
+            app.show_tool_menu();
             false
         }
         Action::ShowBaseBranchPicker => {
@@ -703,6 +708,11 @@ fn palette_commands(ctx: Context, app: &App) -> Vec<PaletteCommand> {
                 label: "PR actions",
                 key_hint: "p",
                 action: Action::ShowPrMenu,
+            },
+            PaletteCommand {
+                label: "Run tools",
+                key_hint: "x",
+                action: Action::ShowToolMenu,
             },
             PaletteCommand {
                 label: "Switch project",

@@ -116,6 +116,7 @@ fn worktree_normal_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('R') => Some(Action::StartSweep),
         KeyCode::Char('s') => Some(Action::CycleWorktreeSortMode),
         KeyCode::Char('p') => Some(Action::ShowPrMenu),
+        KeyCode::Char('x') => Some(Action::ShowToolMenu),
         KeyCode::Char('P') => Some(Action::ShowProjectPicker),
         KeyCode::Char('C') => Some(Action::ShowSessionConfig),
         KeyCode::Char('a') => Some(Action::AddWorktree),
@@ -267,8 +268,9 @@ pub fn help_rows(ctx: Context, exit_key: InputExitKey) -> Vec<(String, &'static 
             ("s", "Cycle sort mode"),
             ("b", "Change base branch"),
             ("p", "PR actions menu"),
+            ("x", "Run tools menu"),
             ("P", "Switch project"),
-            ("C", "Session tabs config"),
+            ("C", "Project config (tabs, tools, Claude)"),
             ("/", "Filter worktrees"),
             ("T", "Cycle theme"),
             (":", "Command palette"),
@@ -490,6 +492,27 @@ mod tests {
             action_for_key(Context::Patch, y, InputExitKey::default()),
             Some(Action::StageAndNext)
         );
+    }
+
+    #[test]
+    fn test_worktree_tool_menu_key() {
+        let x = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+        assert_eq!(
+            action_for_key(Context::WorktreeNormal, x, InputExitKey::default()),
+            Some(Action::ShowToolMenu)
+        );
+        // r / R / c stay unchanged.
+        for (c, action) in [
+            ('r', Action::RemoveSelectedWorktree),
+            ('R', Action::StartSweep),
+            ('c', Action::CloseSelectedWorktreeWindow),
+        ] {
+            let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+            assert_eq!(
+                action_for_key(Context::WorktreeNormal, key, InputExitKey::default()),
+                Some(action)
+            );
+        }
     }
 
     #[test]
