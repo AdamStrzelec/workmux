@@ -215,6 +215,10 @@ pub struct SessionConfigEditor {
     pub move_edit: Option<String>,
     /// Move waiting for confirmation.
     pub move_plan: Option<MovePlan>,
+    /// Page shown (Tab cycles).
+    pub page: super::ConfigPage,
+    pub tools_page: super::ToolsPage,
+    pub claude_page: super::ClaudePage,
 }
 
 /// Locate an existing project config, or the default path to create.
@@ -442,6 +446,7 @@ impl SessionConfigEditor {
             Value::Null
         };
         let (tabs, focus) = tabs_from_yaml(&doc);
+        let (tools, claude) = super::pages_from_yaml(&doc);
         // Read-only: listing worktrees never writes anything.
         let worktrees = crate::workflow::worktree_dir::list_worktree_paths(&repo_root);
         let global = crate::config::Config::global_worktree_dir();
@@ -465,13 +470,26 @@ impl SessionConfigEditor {
             dir_edit: None,
             move_edit: None,
             move_plan: None,
+            page: super::ConfigPage::Layout,
+            tools_page: super::ToolsPage::new(tools),
+            claude_page: super::ClaudePage::new(claude),
         })
     }
 
     /// Whether save rewrites the tab layout. Untouched tabs are written only
     /// when there is nothing else to save (keeps the old `s` behaviour).
     pub fn writes_tabs(&self) -> bool {
-        self.dirty || !self.worktree_dir.needs_write()
+        self.dirty || !self.has_other_changes()
+    }
+
+    /// Changes besides the tab layout (worktree dir, tools, Claude settings).
+    pub fn has_other_changes(&self) -> bool {
+        self.worktree_dir.needs_write() || self.tools_page.dirty || self.claude_page.dirty
+    }
+
+    /// Any unsaved change.
+    pub fn is_dirty(&self) -> bool {
+        self.dirty || self.has_other_changes()
     }
 
     pub fn save(&self) -> Result<()> {
@@ -485,6 +503,20 @@ impl SessionConfigEditor {
                 crate::util::expand_worktree_dir(dir, &self.repo_root)?;
             }
             updated = render_worktree_dir_text(&updated, self.worktree_dir.target())?;
+        }
+        if self.tools_page.dirty {
+            updated = super::render_top_level_key(
+                &updated,
+                "tools",
+                self.tools_page.to_value()?.as_ref(),
+            )?;
+        }
+        if self.claude_page.dirty {
+            updated = super::render_top_level_key(
+                &updated,
+                "claude",
+                self.claude_page.to_value()?.as_ref(),
+            )?;
         }
         if self.writes_tabs() {
             updated = render_config_text(&updated, &self.tabs, self.focus)?;
@@ -635,6 +667,12 @@ impl App {
                         Some(dir) => format!("worktree_dir: {dir}"),
                         None => "worktree_dir: default".to_string(),
                     });
+                }
+                if editor.tools_page.dirty {
+                    parts.push(format!("tools ({})", editor.tools_page.tools.items.len()));
+                }
+                if editor.claude_page.dirty {
+                    parts.push("claude settings".to_string());
                 }
                 if editor.writes_tabs() {
                     parts.push(format!("{} tabs", editor.tabs.len()));
@@ -811,7 +849,24 @@ mod tests {
             dir_edit: None,
             move_edit: None,
             move_plan: None,
+            page: crate::command::dashboard::app::ConfigPage::Layout,
+            tools_page: Default::default(),
+            claude_page: Default::default(),
         }
+    }
+
+    #[test]
+    fn tools_or_claude_change_alone_does_not_rewrite_tabs() {
+        let mut e = editor(vec![SessionTab::new("agent", "<agent>")]);
+        assert!(e.writes_tabs());
+        e.tools_page.dirty = true;
+        assert!(!e.writes_tabs());
+        assert!(e.is_dirty());
+        e.tools_page.dirty = false;
+        e.claude_page.dirty = true;
+        assert!(!e.writes_tabs());
+        e.dirty = true;
+        assert!(e.writes_tabs());
     }
 
     fn paths(v: &[&str]) -> Vec<PathBuf> {

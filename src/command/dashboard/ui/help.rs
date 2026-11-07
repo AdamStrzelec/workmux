@@ -358,7 +358,10 @@ fn render_modal_dim_text(palette: &ThemePalette, text: &str) -> Span<'static> {
     Span::styled(text.to_string(), Style::default().fg(palette.dimmed))
 }
 
-fn render_modal_footer_row(palette: &ThemePalette, pairs: &[(&str, &str)]) -> Line<'static> {
+pub(super) fn render_modal_footer_row(
+    palette: &ThemePalette,
+    pairs: &[(&str, &str)],
+) -> Line<'static> {
     let mut spans = Vec::with_capacity(1 + pairs.len() * 2);
     spans.push(Span::raw(" "));
 
@@ -990,6 +993,10 @@ pub fn render_session_config(f: &mut Frame, app: &App) {
     let Some(ref editor) = app.pending_session_config else {
         return;
     };
+    if editor.page != super::super::app::ConfigPage::Layout {
+        super::config_pages::render_config_page(f, app, editor);
+        return;
+    }
     let palette = &app.palette;
     let mut lines: Vec<Line> = vec![
         Line::from(vec![
@@ -1004,6 +1011,7 @@ pub fn render_session_config(f: &mut Frame, app: &App) {
                 Style::default().fg(palette.text),
             ),
         ]),
+        super::config_pages::page_tabs_line(palette, editor.page),
         Line::from(""),
     ];
 
@@ -1147,7 +1155,7 @@ pub fn render_session_config(f: &mut Frame, app: &App) {
                 ("f", " focus"),
             ],
         ));
-        let save_label = if editor.dirty || editor.worktree_dir.needs_write() {
+        let save_label = if editor.is_dirty() {
             " save*  "
         } else {
             " save  "
@@ -1158,6 +1166,7 @@ pub fn render_session_config(f: &mut Frame, app: &App) {
                 ("w", " worktree dir  "),
                 ("m", " move worktrees  "),
                 ("s", save_label),
+                ("Tab", " page  "),
                 ("Esc", " cancel"),
             ],
         ));

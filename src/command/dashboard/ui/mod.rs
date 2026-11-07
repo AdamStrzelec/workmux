@@ -1,5 +1,6 @@
 //! TUI rendering logic for the dashboard.
 
+mod config_pages;
 mod dashboard;
 mod diff;
 mod format;

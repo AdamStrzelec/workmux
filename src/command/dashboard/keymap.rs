@@ -336,7 +336,8 @@ mod tests {
         );
         assert_eq!(dashboard_normal_key(key('X')), Some(Action::KillSelected));
         assert_eq!(worktree_normal_key(key('g')), None);
-        assert_eq!(worktree_normal_key(key('x')), None);
+        // The remote tip only shows in the agents view; `x` opens run tools here.
+        assert_eq!(worktree_normal_key(key('x')), Some(Action::ShowToolMenu));
     }
 
     #[test]

@@ -496,6 +496,17 @@ fn handle_terminal_event(
             }
             return;
         }
+        match config_page_key(editor, key.code) {
+            PageKey::Handled => return,
+            PageKey::Message(msg) => {
+                app.status_message = Some((msg, std::time::Instant::now()));
+                return;
+            }
+            PageKey::Unhandled => {}
+        }
+        let Some(editor) = app.pending_session_config.as_mut() else {
+            return;
+        };
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => editor.move_cursor(true),
             KeyCode::Char('k') | KeyCode::Up => editor.move_cursor(false),
@@ -749,5 +760,94 @@ mod tests {
         assert!(leave.contains("\u{1b}[?2004l"));
         assert!(leave.contains("\u{1b}[?1000l"));
         assert!(leave.contains("\u{1b}[?1049l"));
+    }
+}
+
+enum PageKey {
+    Handled,
+    Message(String),
+    Unhandled,
+}
+
+/// Keys for the Tools / Claude pages of the Project Config editor and the
+/// Tab page switch. `s` (save) and Esc fall through to the shared handler.
+fn config_page_key(
+    editor: &mut app::SessionConfigEditor,
+    code: crossterm::event::KeyCode,
+) -> PageKey {
+    use crossterm::event::KeyCode;
+    let to_msg = |m: Option<String>| m.map_or(PageKey::Handled, PageKey::Message);
+    if let Some((_, buffer)) = editor.tools_page.edit.as_mut() {
+        return match code {
+            KeyCode::Enter => to_msg(editor.tools_page.commit_edit()),
+            KeyCode::Esc => {
+                editor.tools_page.cancel_edit();
+                PageKey::Handled
+            }
+            KeyCode::Backspace => {
+                buffer.pop();
+                PageKey::Handled
+            }
+            KeyCode::Char(c) => {
+                buffer.push(c);
+                PageKey::Handled
+            }
+            _ => PageKey::Handled,
+        };
+    }
+    if let Some(buffer) = editor.claude_page.edit.as_mut() {
+        return match code {
+            KeyCode::Enter => to_msg(editor.claude_page.commit_edit()),
+            KeyCode::Esc => {
+                editor.claude_page.edit = None;
+                PageKey::Handled
+            }
+            KeyCode::Backspace => {
+                buffer.pop();
+                PageKey::Handled
+            }
+            KeyCode::Char(c) => {
+                buffer.push(c);
+                PageKey::Handled
+            }
+            _ => PageKey::Handled,
+        };
+    }
+    if code == KeyCode::Tab {
+        editor.page = editor.page.next();
+        return PageKey::Handled;
+    }
+    if matches!(code, KeyCode::Char('s') | KeyCode::Esc | KeyCode::Char('q')) {
+        return PageKey::Unhandled;
+    }
+    match editor.page {
+        app::ConfigPage::Layout => PageKey::Unhandled,
+        app::ConfigPage::Tools => {
+            let page = &mut editor.tools_page;
+            match code {
+                KeyCode::Char('j') | KeyCode::Down => page.move_cursor(true),
+                KeyCode::Char('k') | KeyCode::Up => page.move_cursor(false),
+                KeyCode::Char('a') => page.add(),
+                KeyCode::Char('d') => page.delete(),
+                KeyCode::Char('n') => page.start_edit(app::ToolField::Name),
+                KeyCode::Char('b') => page.start_edit(app::ToolField::Key),
+                KeyCode::Enter | KeyCode::Char('e') => page.start_edit(app::ToolField::Command),
+                KeyCode::Char('w') => page.toggle_close_with_session(),
+                _ => {}
+            }
+            PageKey::Handled
+        }
+        app::ConfigPage::Claude => {
+            let page = &mut editor.claude_page;
+            match code {
+                KeyCode::Char('j') | KeyCode::Down => page.move_cursor(true),
+                KeyCode::Char('k') | KeyCode::Up => page.move_cursor(false),
+                KeyCode::Enter | KeyCode::Char('e') => page.start_edit(),
+                KeyCode::Char(' ') => page.cycle(),
+                KeyCode::Char('d') => page.clear(),
+                _ => {}
+            }
+            PageKey::Handled
+        }
     }
 }

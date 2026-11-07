@@ -302,6 +302,7 @@ impl ToolsConfig {
         self.close_with_session.unwrap_or(true)
     }
 
+    #[cfg(test)]
     pub fn by_key(&self, c: char) -> Option<&ToolConfig> {
         self.items.iter().find(|t| t.key_char() == Some(c))
     }

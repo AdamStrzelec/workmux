@@ -3,6 +3,7 @@
 mod agents;
 mod appearance;
 mod background;
+mod config_pages;
 mod events;
 mod pr_actions;
 mod preview;
@@ -11,6 +12,7 @@ mod session_config;
 mod types;
 mod worktrees;
 
+pub use config_pages::*;
 pub use pr_actions::*;
 pub use run_tools::*;
 pub use session_config::*;
