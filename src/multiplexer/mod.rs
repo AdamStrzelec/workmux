@@ -756,6 +756,15 @@ pub trait Multiplexer: Send + Sync {
 
                 if let Some(selected_agent) = resolved.selected_agent.as_mut() {
                     selected_agent.add_launch_flags();
+                    if selected_agent.kind() == "claude"
+                        && let Some(claude) = &config.claude
+                    {
+                        let args = crate::claude_launch::merge_launch_args(
+                            &selected_agent.command.args,
+                            claude.build_args(),
+                        );
+                        selected_agent.command.args.extend(args);
+                    }
                 }
 
                 // Apply sandbox wrapping if enabled for this pane type

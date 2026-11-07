@@ -183,6 +183,20 @@ pub fn ends_with_variadic(args: &[String]) -> bool {
     last_flag.is_some_and(|i| VARIADIC.contains(&args[i].as_str()))
 }
 
+/// Settings args to append to an existing claude argv: drops a skip-permissions
+/// flag already present and terminates a trailing variadic list with `--` so a
+/// prompt appended later is not taken as a tool name.
+pub fn merge_launch_args(existing: &[String], mut args: Vec<String>) -> Vec<String> {
+    const SKIP: &str = "--dangerously-skip-permissions";
+    if existing.iter().any(|a| a == SKIP) {
+        args.retain(|a| a != SKIP);
+    }
+    if ends_with_variadic(&args) {
+        args.push("--".to_string());
+    }
+    args
+}
+
 /// Shell-quote and join args for display or a command line.
 pub fn shell_join(args: &[String]) -> String {
     args.iter()
@@ -442,6 +456,20 @@ mod tests {
         assert!(!ends_with_variadic(
             &cfg("preset: no-git\nappend_system_prompt: hi").build_args()
         ));
+    }
+
+    #[test]
+    fn merge_launch_args_dedups_and_terminates() {
+        let existing = s(&["--dangerously-skip-permissions"]);
+        assert!(merge_launch_args(&existing, cfg("preset: yolo").build_args()).is_empty());
+        assert_eq!(
+            merge_launch_args(&[], cfg("preset: no-git").build_args()),
+            s(&["--disallowedTools", "Bash(git:*)", "Bash(gh:*)", "--"])
+        );
+        assert_eq!(
+            merge_launch_args(&[], cfg("model: opus").build_args()),
+            s(&["--model", "opus"])
+        );
     }
 
     #[test]
