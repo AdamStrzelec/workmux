@@ -3,6 +3,7 @@ mod agent_identity;
 mod agent_setup;
 mod agent_staleness;
 mod claude;
+mod claude_launch;
 mod cli;
 mod cmd;
 mod command;

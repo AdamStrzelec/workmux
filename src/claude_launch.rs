@@ -1,0 +1,524 @@
+//! Claude launch settings (`claude:` in `.workmux.yaml`) and run tools
+//! (`tools:`). Pure data + argument building; no I/O.
+
+use serde::{Deserialize, Serialize};
+
+/// Permission preset applied before explicit tool lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClaudePreset {
+    #[default]
+    None,
+    ReadOnly,
+    NoGit,
+    GitNoCommit,
+    Full,
+    Yolo,
+}
+
+impl ClaudePreset {
+    pub const ALL: [ClaudePreset; 6] = [
+        ClaudePreset::None,
+        ClaudePreset::ReadOnly,
+        ClaudePreset::NoGit,
+        ClaudePreset::GitNoCommit,
+        ClaudePreset::Full,
+        ClaudePreset::Yolo,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ClaudePreset::None => "none",
+            ClaudePreset::ReadOnly => "read-only",
+            ClaudePreset::NoGit => "no-git",
+            ClaudePreset::GitNoCommit => "git-no-commit",
+            ClaudePreset::Full => "full",
+            ClaudePreset::Yolo => "yolo",
+        }
+    }
+
+    /// (allowed, disallowed) tool lists of the preset.
+    fn tools(self) -> (&'static [&'static str], &'static [&'static str]) {
+        match self {
+            ClaudePreset::ReadOnly => (&["Read", "Grep", "Glob"], &["Edit", "Write", "Bash"]),
+            ClaudePreset::NoGit => (&[], &["Bash(git:*)", "Bash(gh:*)"]),
+            ClaudePreset::GitNoCommit => (
+                &[],
+                &["Bash(git commit:*)", "Bash(git push:*)", "Bash(gh pr:*)"],
+            ),
+            _ => (&[], &[]),
+        }
+    }
+
+    /// Next preset in [`Self::ALL`] (wraps).
+    pub fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|p| *p == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+}
+
+/// Permission modes accepted by `claude --permission-mode`.
+pub const PERMISSION_MODES: [&str; 4] = ["default", "acceptEdits", "plan", "bypassPermissions"];
+
+/// Model shortcuts offered by the editor (any string is accepted).
+pub const MODELS: [&str; 3] = ["opus", "sonnet", "haiku"];
+
+/// `claude:` section of the config. Every field is optional.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub struct ClaudeConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<ClaudePreset>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disallowed_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub add_dirs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub append_system_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_args: Vec<String>,
+    /// Resume the Claude session saved on close (`c`) when reopening. Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_on_reopen: Option<bool>,
+}
+
+fn non_empty(v: &Option<String>) -> Option<&str> {
+    v.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+fn push_unique(list: &mut Vec<String>, items: impl IntoIterator<Item = String>) {
+    for item in items {
+        let item = item.trim().to_string();
+        if !item.is_empty() && !list.contains(&item) {
+            list.push(item);
+        }
+    }
+}
+
+impl ClaudeConfig {
+    pub fn resume_on_reopen(&self) -> bool {
+        self.resume_on_reopen.unwrap_or(true)
+    }
+
+    pub fn preset(&self) -> ClaudePreset {
+        self.preset.unwrap_or_default()
+    }
+
+    /// True when nothing would be written to the config.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Claude CLI arguments for these settings (one argv entry per item, so
+    /// values with spaces stay intact; quote with [`shell_join`] for display).
+    pub fn build_args(&self) -> Vec<String> {
+        let preset = self.preset();
+        let mut args = Vec::new();
+        if let Some(model) = non_empty(&self.model) {
+            args.extend(["--model".to_string(), model.to_string()]);
+        }
+        let mode = non_empty(&self.permission_mode)
+            .or((preset == ClaudePreset::Full).then_some("acceptEdits"));
+        if let Some(mode) = mode {
+            args.extend(["--permission-mode".to_string(), mode.to_string()]);
+        }
+        if preset == ClaudePreset::Yolo {
+            args.push("--dangerously-skip-permissions".to_string());
+        }
+        let (preset_allowed, preset_disallowed) = preset.tools();
+        let mut allowed = Vec::new();
+        push_unique(&mut allowed, preset_allowed.iter().map(|s| s.to_string()));
+        push_unique(&mut allowed, self.allowed_tools.iter().cloned());
+        let mut disallowed = Vec::new();
+        push_unique(
+            &mut disallowed,
+            preset_disallowed.iter().map(|s| s.to_string()),
+        );
+        push_unique(&mut disallowed, self.disallowed_tools.iter().cloned());
+        // An explicit allow wins over a preset deny of the same tool.
+        disallowed.retain(|t| !self.allowed_tools.iter().any(|a| a.trim() == t));
+        if !allowed.is_empty() {
+            args.push("--allowedTools".to_string());
+            args.extend(allowed);
+        }
+        if !disallowed.is_empty() {
+            args.push("--disallowedTools".to_string());
+            args.extend(disallowed);
+        }
+        let dirs: Vec<String> = self
+            .add_dirs
+            .iter()
+            .map(|d| d.trim())
+            .filter(|d| !d.is_empty())
+            .map(String::from)
+            .collect();
+        if !dirs.is_empty() {
+            args.push("--add-dir".to_string());
+            args.extend(dirs);
+        }
+        if let Some(prompt) = non_empty(&self.append_system_prompt) {
+            args.extend(["--append-system-prompt".to_string(), prompt.to_string()]);
+        }
+        args.extend(
+            self.extra_args
+                .iter()
+                .filter(|a| !a.trim().is_empty())
+                .cloned(),
+        );
+        args
+    }
+}
+
+/// Variadic flags (`--allowedTools a b`) swallow following positional
+/// arguments, so callers that append a prompt must terminate them. Returns
+/// true when `args` ends inside a variadic list.
+pub fn ends_with_variadic(args: &[String]) -> bool {
+    const VARIADIC: [&str; 3] = ["--allowedTools", "--disallowedTools", "--add-dir"];
+    let last_flag = args.iter().rposition(|a| a.starts_with("--"));
+    last_flag.is_some_and(|i| VARIADIC.contains(&args[i].as_str()))
+}
+
+/// Shell-quote and join args for display or a command line.
+pub fn shell_join(args: &[String]) -> String {
+    args.iter()
+        .map(|a| {
+            shlex::try_quote(a)
+                .map(|q| q.into_owned())
+                .unwrap_or_else(|_| a.clone())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// One run tool: a command started in its own tmux window.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ToolConfig {
+    pub key: String,
+    pub name: String,
+    pub command: String,
+}
+
+impl ToolConfig {
+    pub fn key_char(&self) -> Option<char> {
+        let mut chars = self.key.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => Some(c),
+            _ => None,
+        }
+    }
+}
+
+/// `tools:` section: a plain list, or `{ close_with_session, items }`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolsConfig {
+    pub items: Vec<ToolConfig>,
+    /// Kill tool windows when the worktree window is closed with `c`. Default: true.
+    pub close_with_session: Option<bool>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum ToolsRepr {
+    List(Vec<ToolConfig>),
+    Map {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        close_with_session: Option<bool>,
+        #[serde(default)]
+        items: Vec<ToolConfig>,
+    },
+}
+
+impl<'de> Deserialize<'de> for ToolsConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match ToolsRepr::deserialize(d)? {
+            ToolsRepr::List(items) => ToolsConfig {
+                items,
+                close_with_session: None,
+            },
+            ToolsRepr::Map {
+                close_with_session,
+                items,
+            } => ToolsConfig {
+                items,
+                close_with_session,
+            },
+        })
+    }
+}
+
+impl Serialize for ToolsConfig {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let repr = match self.close_with_session {
+            None => ToolsRepr::List(self.items.clone()),
+            Some(v) => ToolsRepr::Map {
+                close_with_session: Some(v),
+                items: self.items.clone(),
+            },
+        };
+        repr.serialize(s)
+    }
+}
+
+impl ToolsConfig {
+    pub fn close_with_session(&self) -> bool {
+        self.close_with_session.unwrap_or(true)
+    }
+
+    pub fn by_key(&self, c: char) -> Option<&ToolConfig> {
+        self.items.iter().find(|t| t.key_char() == Some(c))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Separator between worktree handle and tool name in tool window names.
+pub const TOOL_WINDOW_SEP: &str = "/";
+
+/// tmux window name of a tool window (before `window_prefix`). `:` and `.`
+/// are tmux target separators, so they are replaced in the tool part.
+pub fn tool_window_name(handle: &str, tool: &str) -> String {
+    let tool: String = tool
+        .chars()
+        .map(|c| {
+            if c.is_whitespace() || c == '.' || c == ':' {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    format!("{handle}{TOOL_WINDOW_SEP}{tool}")
+}
+
+/// Whether `window_name` (already without prefix) is a tool window of `handle`.
+pub fn is_tool_window_of(window_name: &str, handle: &str) -> bool {
+    window_name
+        .strip_prefix(handle)
+        .and_then(|rest| rest.strip_prefix(TOOL_WINDOW_SEP))
+        .is_some_and(|tool| !tool.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(yaml: &str) -> ClaudeConfig {
+        serde_yaml::from_str(yaml).unwrap()
+    }
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn empty_config_builds_no_args() {
+        assert!(ClaudeConfig::default().build_args().is_empty());
+        assert!(ClaudeConfig::default().resume_on_reopen());
+    }
+
+    #[test]
+    fn model_and_permission_mode() {
+        let c = cfg("model: opus\npermission_mode: plan\n");
+        assert_eq!(
+            c.build_args(),
+            s(&["--model", "opus", "--permission-mode", "plan"])
+        );
+    }
+
+    #[test]
+    fn preset_read_only() {
+        let c = cfg("preset: read-only\n");
+        assert_eq!(
+            c.build_args(),
+            s(&[
+                "--allowedTools",
+                "Read",
+                "Grep",
+                "Glob",
+                "--disallowedTools",
+                "Edit",
+                "Write",
+                "Bash"
+            ])
+        );
+    }
+
+    #[test]
+    fn preset_no_git_and_git_no_commit() {
+        assert_eq!(
+            cfg("preset: no-git").build_args(),
+            s(&["--disallowedTools", "Bash(git:*)", "Bash(gh:*)"])
+        );
+        assert_eq!(
+            cfg("preset: git-no-commit").build_args(),
+            s(&[
+                "--disallowedTools",
+                "Bash(git commit:*)",
+                "Bash(git push:*)",
+                "Bash(gh pr:*)"
+            ])
+        );
+    }
+
+    #[test]
+    fn preset_full_and_yolo() {
+        assert_eq!(
+            cfg("preset: full").build_args(),
+            s(&["--permission-mode", "acceptEdits"])
+        );
+        // Explicit mode wins over the preset default.
+        assert_eq!(
+            cfg("preset: full\npermission_mode: plan").build_args(),
+            s(&["--permission-mode", "plan"])
+        );
+        assert_eq!(
+            cfg("preset: yolo").build_args(),
+            s(&["--dangerously-skip-permissions"])
+        );
+        assert!(cfg("preset: none").build_args().is_empty());
+    }
+
+    #[test]
+    fn explicit_lists_merge_on_top_of_preset() {
+        let c =
+            cfg("preset: read-only\nallowed_tools: [Bash, Read]\ndisallowed_tools: [WebFetch]\n");
+        assert_eq!(
+            c.build_args(),
+            s(&[
+                "--allowedTools",
+                "Read",
+                "Grep",
+                "Glob",
+                "Bash",
+                "--disallowedTools",
+                "Edit",
+                "Write",
+                "WebFetch"
+            ])
+        );
+    }
+
+    #[test]
+    fn dirs_prompt_and_extra_args() {
+        let c = cfg(
+            "add_dirs: [../shared, '  ']\nappend_system_prompt: \"Be terse; don't push\"\nextra_args: [--verbose]\n",
+        );
+        let args = c.build_args();
+        assert_eq!(
+            args,
+            s(&[
+                "--add-dir",
+                "../shared",
+                "--append-system-prompt",
+                "Be terse; don't push",
+                "--verbose"
+            ])
+        );
+        // Quoted output parses back to the same argv.
+        assert_eq!(shlex::split(&shell_join(&args)).unwrap(), args);
+    }
+
+    #[test]
+    fn shell_join_quotes_tool_patterns() {
+        assert_eq!(
+            shell_join(&s(&["--disallowedTools", "Bash(git commit:*)"])),
+            "--disallowedTools 'Bash(git commit:*)'"
+        );
+        let round = shlex::split(&shell_join(&cfg("preset: git-no-commit").build_args())).unwrap();
+        assert_eq!(round, cfg("preset: git-no-commit").build_args());
+    }
+
+    #[test]
+    fn variadic_detection() {
+        assert!(ends_with_variadic(&cfg("preset: no-git").build_args()));
+        assert!(!ends_with_variadic(&cfg("model: opus").build_args()));
+        assert!(!ends_with_variadic(
+            &cfg("preset: no-git\nappend_system_prompt: hi").build_args()
+        ));
+    }
+
+    #[test]
+    fn claude_config_round_trips() {
+        let c = cfg("model: sonnet\npreset: git-no-commit\nresume_on_reopen: false\n");
+        assert!(!c.resume_on_reopen());
+        let text = serde_yaml::to_string(&c).unwrap();
+        assert_eq!(
+            text,
+            "model: sonnet\npreset: git-no-commit\nresume_on_reopen: false\n"
+        );
+        assert_eq!(cfg(&text), c);
+    }
+
+    #[test]
+    fn preset_cycle_wraps() {
+        assert_eq!(ClaudePreset::None.next(), ClaudePreset::ReadOnly);
+        assert_eq!(ClaudePreset::Yolo.next(), ClaudePreset::None);
+    }
+
+    #[test]
+    fn tools_parse_list_and_map() {
+        let list: ToolsConfig =
+            serde_yaml::from_str("- { key: d, name: dev, command: npm run dev }\n").unwrap();
+        assert_eq!(list.items.len(), 1);
+        assert!(list.close_with_session());
+        assert_eq!(list.by_key('d').unwrap().command, "npm run dev");
+        assert!(list.by_key('x').is_none());
+
+        let map: ToolsConfig = serde_yaml::from_str(
+            "close_with_session: false\nitems:\n  - { key: t, name: test, command: npm test }\n",
+        )
+        .unwrap();
+        assert!(!map.close_with_session());
+        assert_eq!(map.items[0].name, "test");
+    }
+
+    #[test]
+    fn tools_serialize_round_trip() {
+        let mut t = ToolsConfig {
+            items: vec![ToolConfig {
+                key: "d".into(),
+                name: "dev".into(),
+                command: "npm run dev".into(),
+            }],
+            close_with_session: None,
+        };
+        let text = serde_yaml::to_string(&t).unwrap();
+        assert!(text.starts_with("- key: d"));
+        assert_eq!(serde_yaml::from_str::<ToolsConfig>(&text).unwrap(), t);
+        t.close_with_session = Some(false);
+        let text = serde_yaml::to_string(&t).unwrap();
+        assert!(text.contains("close_with_session: false"));
+        assert_eq!(serde_yaml::from_str::<ToolsConfig>(&text).unwrap(), t);
+    }
+
+    #[test]
+    fn tool_key_must_be_single_char() {
+        let mut t = ToolConfig::default();
+        assert_eq!(t.key_char(), None);
+        t.key = "dd".into();
+        assert_eq!(t.key_char(), None);
+        t.key = "d".into();
+        assert_eq!(t.key_char(), Some('d'));
+    }
+
+    #[test]
+    fn tool_window_naming_and_lookup() {
+        assert_eq!(tool_window_name("feat-x", "dev"), "feat-x/dev");
+        assert_eq!(
+            tool_window_name("feat-x", "dev server.1"),
+            "feat-x/dev-server-1"
+        );
+        assert!(is_tool_window_of("feat-x/dev", "feat-x"));
+        assert!(!is_tool_window_of("feat-x", "feat-x"));
+        assert!(!is_tool_window_of("feat-x/", "feat-x"));
+        assert!(!is_tool_window_of("feat-xy/dev", "feat-x"));
+        assert!(!is_tool_window_of("other/dev", "feat-x"));
+    }
+}

@@ -1031,6 +1031,15 @@ pub struct Config {
     #[serde(default)]
     pub projects: Option<Vec<String>>,
 
+    /// Claude launch settings (model, permission preset, tool lists, resume).
+    /// Applied only when the agent is claude.
+    #[serde(default)]
+    pub claude: Option<crate::claude_launch::ClaudeConfig>,
+
+    /// Run tools started from the dashboard (`x`) in their own window.
+    #[serde(default)]
+    pub tools: Option<crate::claude_launch::ToolsConfig>,
+
     /// Placement for new tmux windows in window mode.
     #[serde(default)]
     pub window_placement: Option<WindowPlacement>,
@@ -3275,6 +3284,10 @@ impl Config {
         // Special case: projects (project wins if explicitly set)
         merged.projects = project.projects.or(self.projects);
 
+        // Special case: claude settings and run tools (project wins if set)
+        merged.claude = project.claude.or(self.claude);
+        merged.tools = project.tools.or(self.tools);
+
         // Special case: window_placement (project wins if explicitly set)
         merged.window_placement = project.window_placement.or(self.window_placement);
 
@@ -4160,6 +4173,23 @@ mod tests {
     use super::{DashboardConfig, InputExitKey, RemoteConfig, RemoteIsolation};
     use crate::test_support;
     use tempfile::TempDir;
+
+    #[test]
+    fn claude_and_tools_sections_parse_and_merge() {
+        let global: Config = serde_yaml::from_str(
+            "claude:\n  model: opus\ntools:\n  - { key: d, name: dev, command: npm run dev }\n",
+        )
+        .unwrap();
+        let project: Config =
+            serde_yaml::from_str("claude:\n  preset: no-git\n  resume_on_reopen: false\n").unwrap();
+        let merged = global.merge(project);
+        let claude = merged.claude.unwrap();
+        assert_eq!(claude.model, None);
+        assert!(!claude.resume_on_reopen());
+        assert_eq!(merged.tools.unwrap().items[0].name, "dev");
+        let none: Config = serde_yaml::from_str("agent: claude\n").unwrap();
+        assert!(none.claude.is_none() && none.tools.is_none());
+    }
 
     #[test]
     fn extra_projects_expand_tilde_and_skip_blank() {
