@@ -88,12 +88,13 @@ Agent jumps close the dashboard by default. See [`close_on_jump`](/guide/dashboa
 | `O`      | Open PR checks in browser              |
 | `a`      | Add worktree                           |
 | `r`      | Remove worktree                        |
-| `c`      | Close mux window (keeps worktree)      |
+| `c`      | Close mux window and its tool windows (keeps worktree; saves the Claude session) |
 | `R`      | Sweep (bulk remove merged/gone)        |
 | `s`      | Cycle sort mode                        |
 | `p`      | PR actions menu (see below)            |
+| `x`      | Run tools menu (see below)             |
 | `P`      | Switch project                         |
-| `C`      | Project config (tabs, worktree dir)    |
+| `C`      | Project config (tabs, worktree dir, tools, Claude) |
 | `/`      | Filter worktrees by name/branch        |
 | `j`/`k`  | Navigate up/down                       |
 | `T`      | Cycle theme                            |
@@ -119,10 +120,34 @@ open, draft, conflicts, failing CI, PRs still loading).
 
 New PRs target the worktree's base branch (set with `b`), or the default branch.
 
+### Run tools menu
+
+Press `x` on a worktree to list the [`tools`](/guide/configuration/#run-tools)
+of the project by key. Pressing a tool's key runs its command in a new tmux
+window named `<prefix><worktree>/<tool name>` with the worktree as working
+directory (inside the worktree's own session in session mode, else in the
+session the dashboard was started from). If that window is already open the
+dashboard switches to it instead of starting a second copy; running tools are
+marked in the menu. `Esc` closes the menu.
+
+`c` also closes the worktree's tool windows (disable with
+`tools.close_with_session: false`), and `r` always kills them before removing
+the worktree.
+
+### Claude session resume
+
+When `c` closes a worktree window whose agent is Claude, the dashboard saves
+that agent's session id (from the status hooks, else the newest transcript for
+the worktree) in the worktree metadata. The next open of that worktree
+(`Enter`, `workmux open`) starts Claude with `--resume <id>` if the transcript
+still exists, and a fresh session otherwise. The saved id is used once.
+Disable with `claude.resume_on_reopen: false`.
+
 ### Project config
 
 Press `C` to edit the project's `.workmux.yaml`: session tabs and the
-worktree directory. Opening the editor never writes anything; `s` saves. Only
+worktree directory (Layout page), run tools (Tools page) and Claude launch
+settings (Claude page). `Tab` switches pages. Opening the editor never writes anything; `s` saves. Only
 the changed keys are rewritten, other lines and comments are kept.
 
 Press `w` to edit the worktree directory ([`worktree_dir`](/guide/configuration/)).
@@ -149,6 +174,15 @@ refused as a whole when a worktree is locked, has an open tmux window or a
 running agent, or its target path already exists. `y` runs the moves in the
 background (never with `--force`), then saves `worktree_dir`; if a move fails
 the rest is skipped and the config is left unchanged.
+
+On the **Tools** page: `a` adds a tool (key, then name, then command),
+`Enter` edits the command, `n` the name, `b` the key, `d` deletes, `w` toggles
+closing tool windows with `c`. Keys must be one character and unique.
+
+On the **Claude** page each field of the [`claude`](/guide/configuration/#claude-launch-settings)
+section is a row: `Enter` edits text (lists comma separated, `extra_args` as
+shell words), `Space` cycles model / permission mode / preset and toggles
+resume, `d` clears. The bottom line previews the resulting `claude` arguments.
 
 Worktree jumps follow the [`close_on_jump`](/guide/dashboard/configuration/#staying-open-after-a-jump) setting.
 

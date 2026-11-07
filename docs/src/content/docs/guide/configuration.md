@@ -300,6 +300,56 @@ windows:
       - command: just test --watch
 ```
 
+### Claude launch settings
+
+The `claude` section adds arguments to every Claude agent pane (`<agent>` or
+`claude` commands). Other agents are not affected. All fields are optional.
+
+```yaml
+claude:
+  model: opus                 # --model (opus/sonnet/haiku or any model name)
+  permission_mode: plan       # default | acceptEdits | plan | bypassPermissions
+  preset: git-no-commit       # none | read-only | no-git | git-no-commit | full | yolo
+  allowed_tools: [Read]       # --allowedTools, merged on top of the preset
+  disallowed_tools: [WebFetch] # --disallowedTools, merged on top of the preset
+  add_dirs: [../shared]       # --add-dir
+  append_system_prompt: "Never push to main."
+  extra_args: [--verbose]
+  resume_on_reopen: true      # resume the session saved by dashboard `c` (default true)
+```
+
+| Preset          | Effect                                                                 |
+| --------------- | ---------------------------------------------------------------------- |
+| `read-only`     | allow `Read Grep Glob`, deny `Edit Write Bash`                         |
+| `no-git`        | deny `Bash(git:*) Bash(gh:*)`                                          |
+| `git-no-commit` | deny `Bash(git commit:*) Bash(git push:*) Bash(gh pr:*)`               |
+| `full`          | `--permission-mode acceptEdits` (unless `permission_mode` is set)      |
+| `yolo`          | `--dangerously-skip-permissions`                                       |
+
+An explicit `allowed_tools` entry removes the same tool from the preset's deny
+list. The project section replaces the global one as a whole.
+
+### Run tools
+
+`tools` lists commands the dashboard starts with `x` in their own window per
+worktree (see [Run tools menu](/guide/dashboard/#run-tools-menu)):
+
+```yaml
+tools:
+  - { key: d, name: dev, command: npm run dev }
+  - { key: t, name: test, command: npm test -- --watch }
+```
+
+To keep tool windows open when closing the worktree window with `c`, use the
+map form:
+
+```yaml
+tools:
+  close_with_session: false   # default true
+  items:
+    - { key: d, name: dev, command: npm run dev }
+```
+
 ### File operations
 
 New worktrees are clean checkouts with no gitignored files (`.env`, `node_modules`, etc.). Use `files` to automatically copy or symlink what each local worktree needs:
