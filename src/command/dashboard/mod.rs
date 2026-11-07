@@ -741,28 +741,6 @@ fn handle_terminal_event(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{enter_terminal, leave_terminal};
-
-    #[test]
-    fn terminal_control_sequences_enable_and_disable_mouse_capture() {
-        let mut enter = Vec::new();
-        enter_terminal(&mut enter).unwrap();
-        let mut leave = Vec::new();
-        leave_terminal(&mut leave).unwrap();
-
-        let enter = String::from_utf8(enter).unwrap();
-        let leave = String::from_utf8(leave).unwrap();
-        assert!(enter.contains("\u{1b}[?1049h"));
-        assert!(enter.contains("\u{1b}[?1000h"));
-        assert!(enter.contains("\u{1b}[?2004h"));
-        assert!(leave.contains("\u{1b}[?2004l"));
-        assert!(leave.contains("\u{1b}[?1000l"));
-        assert!(leave.contains("\u{1b}[?1049l"));
-    }
-}
-
 enum PageKey {
     Handled,
     Message(String),
@@ -849,5 +827,27 @@ fn config_page_key(
             }
             PageKey::Handled
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{enter_terminal, leave_terminal};
+
+    #[test]
+    fn terminal_control_sequences_enable_and_disable_mouse_capture() {
+        let mut enter = Vec::new();
+        enter_terminal(&mut enter).unwrap();
+        let mut leave = Vec::new();
+        leave_terminal(&mut leave).unwrap();
+
+        let enter = String::from_utf8(enter).unwrap();
+        let leave = String::from_utf8(leave).unwrap();
+        assert!(enter.contains("\u{1b}[?1049h"));
+        assert!(enter.contains("\u{1b}[?1000h"));
+        assert!(enter.contains("\u{1b}[?2004h"));
+        assert!(leave.contains("\u{1b}[?2004l"));
+        assert!(leave.contains("\u{1b}[?1000l"));
+        assert!(leave.contains("\u{1b}[?1049l"));
     }
 }
