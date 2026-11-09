@@ -71,13 +71,14 @@ pub fn open(
         Some(MuxMode::Window) if context.config.windows.is_some() => None,
         other => other,
     };
-    let mode = mode_override
-        .or(stored_for_resolve)
-        .unwrap_or(if context.config.windows.is_some() {
-            MuxMode::Session
-        } else {
-            options.mode
-        });
+    let mode =
+        mode_override
+            .or(stored_for_resolve)
+            .unwrap_or(if context.config.windows.is_some() {
+                MuxMode::Session
+            } else {
+                options.mode
+            });
     if mode == MuxMode::Session && options.window_session_name.is_some() {
         anyhow::bail!("--parent-session requires window mode");
     }

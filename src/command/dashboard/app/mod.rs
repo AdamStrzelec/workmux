@@ -189,6 +189,8 @@ pub struct App {
     worktree_preview_path: Option<PathBuf>,
     /// Temporary status message shown in the footer (auto-clears after timeout)
     pub status_message: Option<(String, std::time::Instant)>,
+    /// Error shown in a modal until dismissed (promoted from status_message).
+    pub error_modal: Option<String>,
     /// Whether to show the "New: workmux sidebar" tip in the tab header
     pub show_sidebar_tip: bool,
     /// Whether the agents footer may show the remote servers tip; it is
@@ -341,6 +343,7 @@ impl App {
             worktree_preview: None,
             worktree_preview_path: None,
             status_message: None,
+            error_modal: None,
             show_sidebar_tip,
             show_remote_tip,
             remote_tip_counted: false,

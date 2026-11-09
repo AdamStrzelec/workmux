@@ -314,6 +314,28 @@ fn handle_terminal_event(
         return;
     }
 
+    // Error modal: Enter/Esc/o/Space or a click dismisses it; other input is ignored.
+    if app.error_modal.is_some() {
+        let dismiss = match &event {
+            Event::Key(key) => {
+                key.kind == KeyEventKind::Press
+                    && matches!(
+                        key.code,
+                        crossterm::event::KeyCode::Enter
+                            | crossterm::event::KeyCode::Esc
+                            | crossterm::event::KeyCode::Char('o')
+                            | crossterm::event::KeyCode::Char(' ')
+                    )
+            }
+            Event::Mouse(mouse) => matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)),
+            _ => false,
+        };
+        if dismiss {
+            app.error_modal = None;
+        }
+        return;
+    }
+
     // Mouse input is routed against the most recently rendered frame.
     if let Event::Mouse(mouse) = event {
         if handle_mouse_event(app, mouse) {

@@ -3,6 +3,7 @@
 mod config_pages;
 mod dashboard;
 mod diff;
+mod error_modal;
 mod format;
 mod help;
 mod key_menu;
@@ -44,6 +45,7 @@ use self::tool_menu::render_tool_menu;
 /// Main UI entry point - renders the appropriate view based on app state.
 pub fn ui(f: &mut Frame, app: &mut App) {
     app.terminal_area = f.area();
+    error_modal::promote_status_error(app);
 
     // Render either dashboard or diff view based on view mode
     match &mut app.view_mode {
@@ -66,7 +68,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         || app.pending_sweep.is_some()
         || app.pending_add_worktree.is_some()
         || app.pending_command_palette.is_some()
-        || app.pending_row_context.is_some();
+        || app.pending_row_context.is_some()
+        || app.error_modal.is_some();
 
     if has_modal {
         dim_buffer(f);
@@ -102,5 +105,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         render_sweep(f, app);
     } else if app.pending_add_worktree.is_some() {
         render_add_worktree(f, app);
+    }
+
+    // Errors stay on top of everything until dismissed.
+    if app.error_modal.is_some() {
+        error_modal::render_error_modal(f, app);
     }
 }
