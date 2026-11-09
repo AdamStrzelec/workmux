@@ -22,6 +22,29 @@ editUrl: https://github.com/raine/workmux/edit/main/CHANGELOG.md
 <!-- skipped: v0.1.25 -->
 <!-- skipped: v0.1.8 -->
 
+## v0.1.281 (2026-11-08)
+
+- Add experimental Zellij support for the agent sidebar. See the [Zellij guide](https://workmux.dev/guide/zellij). ([#331](https://github.com/raine/workmux/pull/331))
+- The Zellij backend now works with Zellij 0.44.1 or later instead of requiring a source build.
+- Add GitHub Copilot CLI as a built-in agent. ([#314](https://github.com/raine/workmux/pull/314))
+- Show Copilot agents as waiting when they ask for permission or ask a question. Requires Copilot CLI 1.0.18 or later; `workmux setup` offers to update existing hooks. ([#336](https://github.com/raine/workmux/pull/336))
+- Fix sandboxes crashing on start for agents with no known config mount, such as `agy`, or with a custom `sandbox.agent_config_dir`.
+- Fix Zellij commands occasionally failing when a pane closes.
+
+## v0.1.280 (2026-11-07)
+
+- Fix slow multiplexer queries delaying agent registration and status updates in other sessions. ([#352](https://github.com/raine/workmux/pull/352))
+- Fix commands failing from a project root whose `.git` file points to a bare repository. ([#296](https://github.com/raine/workmux/pull/296))
+
+## v0.1.279 (2026-11-06)
+
+- Add `--wait` to `workmux send` to wait for the agent to finish, and target agents by pane ID. `send` now refuses to type into an agent waiting on a dialog or to guess between several agents in one worktree.
+- Add `-b`/`--background` to `workmux open` to open worktrees without switching to them, like `workmux add`. ([#347](https://github.com/raine/workmux/issues/347))
+- Fix the dashboard using high CPU while idle on Zellij. ([#348](https://github.com/raine/workmux/issues/348))
+- Fix opening a worktree from another project in the dashboard doing nothing or resolving the wrong project.
+- Fix keys typed right after a remote agent's window reconnects being lost. ([#350](https://github.com/raine/workmux/pull/350))
+- Fix windows staying open with only the sidebar for up to two seconds after the last pane's shell exits. ([#346](https://github.com/raine/workmux/pull/346))
+
 ## v0.1.278 (2026-10-31)
 
 <!-- highlight: Remote servers -->
