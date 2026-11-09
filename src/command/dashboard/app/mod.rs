@@ -38,6 +38,7 @@ use super::keymap::Context;
 use super::ui::theme::ThemePalette;
 
 const PR_FETCH_INTERVAL: Duration = Duration::from_secs(30);
+const USAGE_FETCH_INTERVAL: Duration = Duration::from_secs(60);
 
 use super::scope::ScopeMode;
 use super::settings::{load_hide_stale, load_last_pane_id, load_preview_size};
@@ -90,6 +91,10 @@ pub struct App {
     last_git_fetch: std::time::Instant,
     /// Flag to track if a git fetch is in progress (prevents thread pile-up)
     pub is_git_fetching: Arc<AtomicBool>,
+    /// Latest Claude plan usage snapshot, shown in the tab header
+    pub usage: Option<crate::usage::Snapshot>,
+    last_usage_fetch: std::time::Instant,
+    is_usage_fetching: Arc<AtomicBool>,
     /// PR info indexed by canonical common Git directory, then branch name
     pr_statuses: HashMap<PathBuf, HashMap<String, PrSummary>>,
     /// GitHub check info indexed by canonical common Git directory, then branch name
@@ -284,6 +289,9 @@ impl App {
             // Set to past to trigger immediate fetch on first refresh
             last_git_fetch: std::time::Instant::now() - Duration::from_secs(60),
             is_git_fetching: Arc::new(AtomicBool::new(false)),
+            usage: crate::usage::cache::cached_snapshot(),
+            last_usage_fetch: std::time::Instant::now() - USAGE_FETCH_INTERVAL,
+            is_usage_fetching: Arc::new(AtomicBool::new(false)),
             pr_statuses,
             check_statuses,
             // Set to past to trigger immediate fetch on first refresh
@@ -442,6 +450,12 @@ impl App {
         if self.last_git_fetch.elapsed() >= Duration::from_secs(5) {
             self.last_git_fetch = std::time::Instant::now();
             self.spawn_git_status_fetch();
+        }
+
+        // Refresh Claude usage once a minute (the probe is cached and locked)
+        if self.last_usage_fetch.elapsed() >= USAGE_FETCH_INTERVAL {
+            self.last_usage_fetch = std::time::Instant::now();
+            self.spawn_usage_fetch();
         }
 
         // Trigger PR fetch every 30 seconds (only update timer if fetch actually started)

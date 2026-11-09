@@ -73,6 +73,25 @@ impl App {
         });
     }
 
+    /// Spawn a background thread to refresh the Claude usage snapshot.
+    pub(super) fn spawn_usage_fetch(&self) {
+        if self
+            .is_usage_fetching
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        let tx = self.event_tx.clone();
+        let flag = self.is_usage_fetching.clone();
+        std::thread::spawn(move || {
+            let result = crate::usage::cache::get_or_refresh(false, crate::usage::claude::probe)
+                .map_err(|e| e.to_string());
+            flag.store(false, Ordering::SeqCst);
+            let _ = tx.send(AppEvent::Usage(result));
+        });
+    }
+
     /// Spawn a background thread to fetch GitHub status for all repos.
     /// Returns true if a fetch was started, false if one is already in progress.
     pub(super) fn spawn_pr_status_fetch(&self) -> bool {

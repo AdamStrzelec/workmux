@@ -17,6 +17,8 @@ pub enum AppEvent {
     Terminal(crossterm::event::Event),
     /// Git status update for a worktree path
     GitStatus(PathBuf, GitStatus),
+    /// Claude plan usage snapshot (Err carries a short reason)
+    Usage(Result<crate::usage::Snapshot, String>),
     /// GitHub status update for a repo root
     GithubStatus(PathBuf, HashMap<String, BranchSummary>),
     /// Full worktree list from background fetch

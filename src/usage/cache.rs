@@ -49,6 +49,11 @@ pub fn try_lock(path: &Path) -> Option<fs::File> {
     (rc == 0).then_some(file)
 }
 
+/// Last cached snapshot, however old. Lets the UI show something at startup.
+pub fn cached_snapshot() -> Option<Snapshot> {
+    load(&cache_path().ok()?)
+}
+
 /// Return a fresh snapshot, probing the API only when the cache is stale.
 ///
 /// If another process is already refreshing, the stale cache is returned

@@ -33,6 +33,12 @@ impl App {
             AppEvent::RemoteDiff(ws_id, branch_diff, result) => {
                 super::super::diff_ops::apply_remote_diff(self, &ws_id, branch_diff, result);
             }
+            AppEvent::Usage(result) => {
+                // Keep showing the previous snapshot if a refresh fails.
+                if let Ok(snapshot) = result {
+                    self.usage = Some(snapshot);
+                }
+            }
             AppEvent::GitStatus(path, status) => {
                 self.git_statuses.insert(path, status);
             }

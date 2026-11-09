@@ -47,6 +47,8 @@ fn render_tab_header(f: &mut Frame, app: &App, area: Rect) {
         rule_style,
     ));
 
+    let usage_line = usage_header_line(app);
+
     if app.show_sidebar_tip {
         let tip_new = Style::default().fg(app.palette.header);
         let tip_text = Style::default().fg(app.palette.text);
@@ -65,9 +67,49 @@ fn render_tab_header(f: &mut Frame, app: &App, area: Rect) {
             Paragraph::new(rule),
             Rect::new(area.x, area.y + 1, area.width, 1),
         );
+    } else if let Some(usage_line) = usage_line {
+        let usage_width = usage_line.width() as u16 + 2;
+        let cols = Layout::horizontal([Constraint::Fill(1), Constraint::Length(usage_width)])
+            .split(Rect::new(area.x, area.y, area.width, 1));
+        f.render_widget(Paragraph::new(Line::from(tabs_spans)), cols[0]);
+        f.render_widget(Paragraph::new(usage_line), cols[1]);
+        f.render_widget(
+            Paragraph::new(rule),
+            Rect::new(area.x, area.y + 1, area.width, 1),
+        );
     } else {
         f.render_widget(Paragraph::new(vec![Line::from(tabs_spans), rule]), area);
     }
+}
+
+/// `5h 28% · 7d 63%`, coloured by utilization. None until a snapshot exists.
+fn usage_header_line(app: &App) -> Option<Line<'static>> {
+    use crate::usage::format::{Level, level};
+
+    let snap = app.usage.as_ref()?;
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (label, window) in [("5h", &snap.session), ("7d", &snap.weekly)] {
+        let Some(p) = window.as_ref().and_then(|w| w.used_percent) else {
+            continue;
+        };
+        if !spans.is_empty() {
+            spans.push(Span::styled(
+                " \u{b7} ",
+                Style::default().fg(app.palette.dimmed),
+            ));
+        }
+        let color = match level(p) {
+            Level::Ok => app.palette.success,
+            Level::Warn => app.palette.warning,
+            Level::Critical => app.palette.danger,
+        };
+        spans.push(Span::styled(
+            format!("{label} "),
+            Style::default().fg(app.palette.dimmed),
+        ));
+        spans.push(Span::styled(format!("{p}%"), Style::default().fg(color)));
+    }
+    (!spans.is_empty()).then(|| Line::from(spans))
 }
 
 /// Render the dashboard view (table + preview + footer).
