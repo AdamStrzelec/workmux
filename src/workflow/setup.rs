@@ -114,6 +114,17 @@ pub fn setup_environment(
         run_file_ops = options.run_file_ops,
         "setup_environment:start"
     );
+    // Per-worktree Claude override (dashboard `C`, Claude page, `w`).
+    let overridden;
+    let config = match crate::claude_launch::worktree_override(handle, Some(worktree_path)) {
+        Some(over) => {
+            let mut merged = config.clone();
+            merged.claude = Some(merged.claude.unwrap_or_default().overlay(&over));
+            overridden = merged;
+            &overridden
+        }
+        None => config,
+    };
     let prefix = config.window_prefix();
     let provisioned = provision_environment(
         branch_name,

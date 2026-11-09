@@ -1,6 +1,8 @@
 //! Claude launch settings (`claude:` in `.workmux.yaml`) and run tools
 //! (`tools:`). Pure data + argument building; no I/O.
 
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 
 /// Permission preset applied before explicit tool lists.
@@ -195,6 +197,60 @@ pub fn merge_launch_args(existing: &[String], mut args: Vec<String>) -> Vec<Stri
         args.push("--".to_string());
     }
     args
+}
+
+impl ClaudeConfig {
+    /// `self` with every field set in `over` replacing it (per-worktree
+    /// override on top of the project settings).
+    pub fn overlay(&self, over: &ClaudeConfig) -> ClaudeConfig {
+        let list = |base: &Vec<String>, over: &Vec<String>| {
+            if over.is_empty() {
+                base.clone()
+            } else {
+                over.clone()
+            }
+        };
+        ClaudeConfig {
+            model: over.model.clone().or_else(|| self.model.clone()),
+            permission_mode: over
+                .permission_mode
+                .clone()
+                .or_else(|| self.permission_mode.clone()),
+            preset: over.preset.or(self.preset),
+            allowed_tools: list(&self.allowed_tools, &over.allowed_tools),
+            disallowed_tools: list(&self.disallowed_tools, &over.disallowed_tools),
+            add_dirs: list(&self.add_dirs, &over.add_dirs),
+            append_system_prompt: over
+                .append_system_prompt
+                .clone()
+                .or_else(|| self.append_system_prompt.clone()),
+            extra_args: list(&self.extra_args, &over.extra_args),
+            resume_on_reopen: over.resume_on_reopen.or(self.resume_on_reopen),
+        }
+    }
+}
+
+/// Worktree metadata key holding the per-worktree Claude override (JSON).
+pub const CLAUDE_CONFIG_META: &str = "claude-config";
+
+/// Per-worktree Claude override, if one is saved.
+pub fn worktree_override(handle: &str, workdir: Option<&Path>) -> Option<ClaudeConfig> {
+    crate::git::get_worktree_meta_in(handle, CLAUDE_CONFIG_META, workdir)
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .filter(|c: &ClaudeConfig| !c.is_empty())
+}
+
+/// Save (or remove, when empty) the per-worktree Claude override.
+pub fn save_worktree_override(
+    handle: &str,
+    workdir: Option<&Path>,
+    config: &ClaudeConfig,
+) -> anyhow::Result<()> {
+    if config.is_empty() {
+        return crate::git::unset_worktree_meta_in(handle, CLAUDE_CONFIG_META, workdir);
+    }
+    let json = serde_json::to_string(config)?;
+    crate::git::set_worktree_meta_in(handle, CLAUDE_CONFIG_META, &json, workdir)
 }
 
 /// Shell-quote and join args for display or a command line.
@@ -490,6 +546,18 @@ mod tests {
             merge_launch_args(&[], cfg("model: opus").build_args()),
             s(&["--model", "opus"])
         );
+    }
+
+    #[test]
+    fn overlay_replaces_only_set_fields() {
+        let base = cfg("model: opus\npreset: no-git\nallowed_tools: [Read]\nadd_dirs: [/a]\n");
+        let over = cfg("model: sonnet\nallowed_tools: [Bash]\n");
+        let merged = base.overlay(&over);
+        assert_eq!(merged.model.as_deref(), Some("sonnet"));
+        assert_eq!(merged.preset, Some(ClaudePreset::NoGit));
+        assert_eq!(merged.allowed_tools, vec!["Bash".to_string()]);
+        assert_eq!(merged.add_dirs, vec!["/a".to_string()]);
+        assert_eq!(base.overlay(&ClaudeConfig::default()), base);
     }
 
     #[test]

@@ -131,7 +131,22 @@ pub fn render_config_page(f: &mut Frame, app: &App, editor: &SessionConfigEditor
             }
         }
         ConfigPage::Claude => {
-            let page = &editor.claude_page;
+            let page = editor.active_claude_page();
+            let scope = match &editor.claude_worktree {
+                Some(wt) if editor.claude_scope_worktree => {
+                    format!(
+                        " Scope: worktree '{}' (overrides project, w: project)",
+                        wt.handle
+                    )
+                }
+                Some(wt) => format!(" Scope: project (w: override for '{}')", wt.handle),
+                None => " Scope: project".to_string(),
+            };
+            lines.push(Line::from(Span::styled(
+                scope,
+                Style::default().fg(palette.accent),
+            )));
+            lines.push(Line::from(""));
             for (i, field) in ClaudeField::ALL.into_iter().enumerate() {
                 let selected = i == page.cursor;
                 let style = row(selected);
@@ -162,7 +177,7 @@ pub fn render_config_page(f: &mut Frame, app: &App, editor: &SessionConfigEditor
                 lines.push(Line::from(spans));
             }
             lines.push(Line::from(""));
-            let preview = page.args_preview();
+            let preview = editor.claude_args_preview();
             lines.push(Line::from(vec![
                 Span::styled(" claude ", dim),
                 Span::styled(
@@ -175,7 +190,11 @@ pub fn render_config_page(f: &mut Frame, app: &App, editor: &SessionConfigEditor
                 ),
             ]));
             lines.push(Line::from(Span::styled(
-                " Applies to new claude agent panes; per-project settings.",
+                if editor.claude_scope_worktree {
+                    " Worktree override: (unset) fields fall back to the project."
+                } else {
+                    " Applies to new claude agent panes; per-project settings."
+                },
                 dim,
             )));
             lines.push(Line::from(""));
@@ -187,7 +206,12 @@ pub fn render_config_page(f: &mut Frame, app: &App, editor: &SessionConfigEditor
             } else {
                 lines.push(render_modal_footer_row(
                     palette,
-                    &[("Enter", " edit  "), ("Space", " cycle  "), ("d", " clear")],
+                    &[
+                        ("Enter", " edit  "),
+                        ("Space", " cycle  "),
+                        ("d", " clear  "),
+                        ("w", " project/worktree"),
+                    ],
                 ));
             }
         }

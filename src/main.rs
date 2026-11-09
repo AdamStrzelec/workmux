@@ -36,6 +36,7 @@ mod ui;
 mod usage;
 mod util;
 mod workflow;
+mod worktree_extras;
 mod xdg;
 
 use anyhow::Result;

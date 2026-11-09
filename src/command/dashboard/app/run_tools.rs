@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use crate::claude_launch::{ToolConfig, is_tool_window_of, tool_window_name};
+use crate::claude_launch::{ToolConfig, tool_window_name};
 use crate::multiplexer::WindowTarget;
 use crate::multiplexer::conversation::{ClaudeForker, ConversationForker};
 
@@ -27,24 +27,8 @@ impl ToolMenu {
     }
 }
 
-/// `(window, session)` pairs of the tool windows of `handle`.
-pub fn tool_windows_of(
-    windows: &HashSet<(String, String)>,
-    prefix: &str,
-    handle: &str,
-) -> Vec<(String, String)> {
-    let mut found: Vec<(String, String)> = windows
-        .iter()
-        .filter(|(window, _)| {
-            window
-                .strip_prefix(prefix)
-                .is_some_and(|name| is_tool_window_of(name, handle))
-        })
-        .cloned()
-        .collect();
-    found.sort();
-    found
-}
+#[cfg(test)]
+use crate::worktree_extras::tool_windows_of;
 
 /// Session of an open window named `full_name`, if any.
 pub fn find_window<'a>(
@@ -175,24 +159,16 @@ impl App {
 
     /// Kill every tool window of `handle`. Returns how many were closed.
     pub(super) fn kill_tool_windows(&self, handle: &str) -> usize {
-        let windows = self.all_windows();
-        let found = tool_windows_of(&windows, self.config.window_prefix(), handle);
-        found
-            .into_iter()
-            .filter(|(window, session)| {
-                self.mux
-                    .kill_window_target(&WindowTarget::new(window.clone(), Some(session.clone())))
-                    .is_ok()
-            })
-            .count()
+        crate::worktree_extras::kill_tool_windows(
+            self.mux.as_ref(),
+            self.config.window_prefix(),
+            handle,
+        )
     }
 
     /// Whether closing the worktree window also closes its tool windows.
     pub(super) fn close_tools_with_session(&self, path: &Path) -> bool {
-        crate::config::Config::load_with_location_from(path, None)
-            .ok()
-            .and_then(|(config, _)| config.tools)
-            .is_none_or(|t| t.close_with_session())
+        crate::worktree_extras::close_tools_with_session(path)
     }
 
     /// Remember the Claude session of the worktree's agent so reopening the

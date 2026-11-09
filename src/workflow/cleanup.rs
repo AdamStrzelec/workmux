@@ -563,6 +563,10 @@ fn cleanup_impl(
     context.chdir_to_main_worktree()?;
 
     let mux_running = context.mux.is_running().unwrap_or(false);
+    if mux_running {
+        // Run tool windows (`x` menu) belong to the worktree: always close them.
+        crate::worktree_extras::kill_tool_windows(context.mux.as_ref(), &context.prefix, handle);
+    }
 
     // Check if we're running inside ANY matching target (original or duplicate)
     let current_matching_target = if mux_running {

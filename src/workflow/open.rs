@@ -415,11 +415,14 @@ pub fn open(
             Some(&context.execution_dir),
         );
         if saved.is_some() {
+            let over = crate::claude_launch::worktree_override(&base_handle, Some(&worktree_path));
             let enabled = context
                 .config
                 .claude
-                .as_ref()
-                .is_none_or(|c| c.resume_on_reopen());
+                .clone()
+                .unwrap_or_default()
+                .overlay(&over.unwrap_or_default())
+                .resume_on_reopen();
             let session_dir = if context.config_rel_dir.as_os_str().is_empty() {
                 worktree_path.clone()
             } else {
