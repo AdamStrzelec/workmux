@@ -64,8 +64,14 @@ fn send(alert: &Alert) {
     tmux_message(&message);
 }
 
+/// Escape text for `display-message`, which expands `#` formats and `%` strftime codes.
+fn escape_tmux(message: &str) -> String {
+    message.replace('#', "##").replace('%', "%%")
+}
+
 /// Show `message` for 10 s on every attached tmux client.
 fn tmux_message(message: &str) {
+    let message = escape_tmux(message);
     let Ok(out) = Command::new("tmux")
         .args(["list-clients", "-F", "#{client_name}"])
         .output()
@@ -74,7 +80,7 @@ fn tmux_message(message: &str) {
     };
     for client in String::from_utf8_lossy(&out.stdout).lines() {
         let _ = Command::new("tmux")
-            .args(["display-message", "-c", client, "-d", "10000", message])
+            .args(["display-message", "-c", client, "-d", "10000", &message])
             .output();
     }
 }
@@ -82,6 +88,11 @@ fn tmux_message(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escapes_tmux_format_characters() {
+        assert_eq!(escape_tmux("70% left #1"), "70%% left ##1");
+    }
 
     #[test]
     fn prune_drops_past_cycles_only() {
