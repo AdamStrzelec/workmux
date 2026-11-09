@@ -282,6 +282,18 @@ workmux add my-feature -l design
 
 When `-l` is used, the layout's `panes` replace the top-level `panes` for that worktree. All other config (hooks, files, agent, etc.) comes from the top-level as usual. The `-l` flag cannot be combined with `--agent`.
 
+### Tabs instead of splits
+
+In session mode, `split_panes: false` opens every pane (the agent, the
+default shell, commands from `panes` or `windows`) in its own tmux window
+instead of splitting a window. Put it in the global config to apply it to
+every project:
+
+```yaml
+mode: session
+split_panes: false
+```
+
 ### Windows
 
 When using [session mode](/guide/session-mode/), you can configure multiple windows per session using the `windows` array. This is mutually exclusive with the top-level `panes` config. See [multiple windows per session](/guide/session-mode/#multiple-windows-per-session) for full details.

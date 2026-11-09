@@ -892,6 +892,37 @@ pub struct WindowConfig {
     pub panes: Option<Vec<PaneConfig>>,
 }
 
+/// Turn every pane into its own window (used when `split_panes: false`).
+/// The first pane of a window keeps the window name; split sizing is dropped.
+pub fn one_pane_per_window(plans: &[WindowConfig]) -> Vec<WindowConfig> {
+    let mut out = Vec::new();
+    for window in plans {
+        let panes = window.panes.as_deref().unwrap_or(&[]);
+        if panes.is_empty() {
+            out.push(window.clone());
+            continue;
+        }
+        for (i, pane) in panes.iter().enumerate() {
+            let name = if i == 0 {
+                window.name.clone()
+            } else {
+                pane.name.clone()
+            };
+            out.push(WindowConfig {
+                name,
+                panes: Some(vec![PaneConfig {
+                    split: None,
+                    size: None,
+                    percentage: None,
+                    target: None,
+                    ..pane.clone()
+                }]),
+            });
+        }
+    }
+    out
+}
+
 /// Configuration for the workmux tool, read from .workmux.yaml
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 pub struct Config {
@@ -926,6 +957,11 @@ pub struct Config {
     /// Multiple window configuration (session mode only, mutually exclusive with `panes`)
     #[serde(default)]
     pub windows: Option<Vec<WindowConfig>>,
+
+    /// Session mode only. `false` opens every pane (agent, shell, commands)
+    /// in its own tmux window (tab) instead of splitting. Default: true.
+    #[serde(default)]
+    pub split_panes: Option<bool>,
 
     /// Executable and arguments used to run lifecycle hook commands.
     /// The hook command is appended as the final argument.
@@ -3194,6 +3230,7 @@ impl Config {
             worktree_prefix,
             panes,
             windows,
+            split_panes,
             status_format,
             nerdfont,
             auto_update_check,
@@ -8043,5 +8080,57 @@ theme:
             merged.theme.custom.unwrap().accent,
             Some("#111111".to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod one_pane_per_window_tests {
+    use super::{PaneConfig, SplitDirection, WindowConfig, one_pane_per_window};
+
+    fn pane(cmd: &str, split: Option<SplitDirection>) -> PaneConfig {
+        PaneConfig {
+            command: Some(cmd.to_string()),
+            size: split.as_ref().map(|_| 20),
+            split,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn every_pane_becomes_its_own_window() {
+        let plans = vec![
+            WindowConfig {
+                name: Some("main".into()),
+                panes: Some(vec![
+                    pane("<agent>", None),
+                    PaneConfig {
+                        name: Some("shell".into()),
+                        ..pane("clear", Some(SplitDirection::Horizontal))
+                    },
+                ]),
+            },
+            WindowConfig {
+                name: Some("dev".into()),
+                panes: Some(vec![pane("npm run dev", None)]),
+            },
+        ];
+        let out = one_pane_per_window(&plans);
+        let names: Vec<_> = out.iter().map(|w| w.name.as_deref()).collect();
+        assert_eq!(names, vec![Some("main"), Some("shell"), Some("dev")]);
+        for w in &out {
+            let panes = w.panes.as_ref().unwrap();
+            assert_eq!(panes.len(), 1);
+            assert!(panes[0].split.is_none() && panes[0].size.is_none());
+        }
+        assert_eq!(
+            out[1].panes.as_ref().unwrap()[0].command.as_deref(),
+            Some("clear")
+        );
+    }
+
+    #[test]
+    fn split_panes_parses() {
+        let cfg: super::Config = serde_yaml::from_str("split_panes: false\n").unwrap();
+        assert_eq!(cfg.split_panes, Some(false));
     }
 }

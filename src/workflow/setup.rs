@@ -138,6 +138,12 @@ pub fn setup_environment(
         let panes = config.panes.clone();
         vec![WindowConfig { name: None, panes }]
     };
+    let window_plans =
+        if options.mode == config::MuxMode::Session && config.split_panes == Some(false) {
+            config::one_pane_per_window(&window_plans)
+        } else {
+            window_plans
+        };
 
     // Flatten all panes across all windows for prechecks.
     // This ensures Lima pre-boot and prompt validation consider ALL panes.
