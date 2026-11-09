@@ -16,10 +16,41 @@ pub enum WindowKind {
 /// Fire when at least `min_remaining_percent` of the window is unused and the
 /// window resets within `within_minutes`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlertRule {
     pub window: WindowKind,
     pub min_remaining_percent: u8,
     pub within_minutes: u32,
+}
+
+/// `usage:` section of the global config.
+///
+/// ```yaml
+/// usage:
+///   alerts:
+///     - window: session
+///       min_remaining_percent: 40
+///       within_minutes: 30
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsageConfig {
+    #[serde(default)]
+    pub alerts: Vec<AlertRule>,
+}
+
+impl UsageConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        for (i, rule) in self.alerts.iter().enumerate() {
+            if rule.min_remaining_percent > 100 {
+                anyhow::bail!("usage.alerts[{i}]: min_remaining_percent must be 0-100");
+            }
+            if rule.within_minutes == 0 {
+                anyhow::bail!("usage.alerts[{i}]: within_minutes must be greater than 0");
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -148,6 +179,42 @@ mod tests {
         // Next cycle (different reset timestamp) fires again.
         let next = snap(30, 1000 + 5 * 3600 + 600);
         assert!(due(&[rule()], &next, 1000 + 5 * 3600, &delivered).len() == 1);
+    }
+
+    #[test]
+    fn config_parses_from_yaml() {
+        let yaml =
+            "alerts:\n  - window: weekly\n    min_remaining_percent: 30\n    within_minutes: 120\n";
+        let cfg: UsageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(cfg.alerts.len(), 1);
+        assert_eq!(cfg.alerts[0].window, WindowKind::Weekly);
+        cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn config_rejects_typos_and_bad_values() {
+        assert!(
+            serde_yaml::from_str::<UsageConfig>(
+                "alerts:\n  - window: session\n    min_remaining: 1\n    within_minutes: 5\n"
+            )
+            .is_err()
+        );
+        let bad = UsageConfig {
+            alerts: vec![AlertRule {
+                window: WindowKind::Session,
+                min_remaining_percent: 101,
+                within_minutes: 5,
+            }],
+        };
+        assert!(bad.validate().is_err());
+        let zero = UsageConfig {
+            alerts: vec![AlertRule {
+                window: WindowKind::Session,
+                min_remaining_percent: 10,
+                within_minutes: 0,
+            }],
+        };
+        assert!(zero.validate().is_err());
     }
 
     #[test]

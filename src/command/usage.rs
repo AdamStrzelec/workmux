@@ -10,7 +10,13 @@ struct JsonOutput<'a> {
 }
 
 pub fn run(json: bool, tmux: bool, refresh: bool) -> Result<()> {
-    let snap = cache::get_or_refresh(refresh, claude::probe)?;
+    let snap = match cache::get_or_refresh(refresh, claude::probe) {
+        Ok(snap) => snap,
+        // A status bar must stay quiet when the probe fails.
+        Err(_) if tmux => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    usage::notify::check_and_notify(&crate::config::Config::global_usage_config(), &snap);
 
     if json {
         println!(

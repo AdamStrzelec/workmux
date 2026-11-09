@@ -8,6 +8,7 @@ pub mod alert;
 pub mod cache;
 pub mod claude;
 pub mod format;
+pub mod notify;
 
 use serde::{Deserialize, Serialize};
 

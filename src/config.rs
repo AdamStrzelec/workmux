@@ -1034,6 +1034,11 @@ pub struct Config {
     #[serde(default)]
     pub sidebar: SidebarConfig,
 
+    /// Claude plan usage alerts. Global config only: a project file cannot
+    /// define alerts because the limit belongs to the account.
+    #[serde(default)]
+    pub usage: crate::usage::alert::UsageConfig,
+
     /// Whether to use nerdfont icons (None = prompt user on first run)
     #[serde(default)]
     pub nerdfont: Option<bool>,
@@ -3162,6 +3167,23 @@ impl Config {
             return Self::load_from_path(&path);
         }
         Ok(None)
+    }
+
+    /// `usage` section of the global config. Invalid config logs and yields
+    /// the default, so a typo never breaks the status bar.
+    pub fn global_usage_config() -> crate::usage::alert::UsageConfig {
+        let usage = Self::load_global()
+            .ok()
+            .flatten()
+            .map(|c| c.usage)
+            .unwrap_or_default();
+        match usage.validate() {
+            Ok(()) => usage,
+            Err(e) => {
+                tracing::warn!("ignoring invalid usage config: {e}");
+                Default::default()
+            }
+        }
     }
 
     /// `worktree_dir` from the global config file, if set.

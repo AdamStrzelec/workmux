@@ -8,7 +8,7 @@ mod context;
 mod create;
 pub mod file_ops;
 mod list;
-mod merge;
+pub(crate) mod merge;
 mod open;
 pub mod pr;
 pub mod prompt_loader;

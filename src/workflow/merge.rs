@@ -400,7 +400,7 @@ pub fn merge(
 }
 
 /// Shows a system notification on macOS or Linux
-fn show_notification(message: &str) {
+pub(crate) fn show_notification(message: &str) {
     #[cfg(target_os = "macos")]
     {
         use mac_notification_sys::{Notification, set_application};

@@ -87,6 +87,12 @@ impl App {
         std::thread::spawn(move || {
             let result = crate::usage::cache::get_or_refresh(false, crate::usage::claude::probe)
                 .map_err(|e| e.to_string());
+            if let Ok(snap) = &result {
+                crate::usage::notify::check_and_notify(
+                    &crate::config::Config::global_usage_config(),
+                    snap,
+                );
+            }
             flag.store(false, Ordering::SeqCst);
             let _ = tx.send(AppEvent::Usage(result));
         });
