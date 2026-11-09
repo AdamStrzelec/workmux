@@ -33,6 +33,7 @@ mod test_support;
 mod tips;
 mod tmux_style;
 mod ui;
+mod usage;
 mod util;
 mod workflow;
 mod xdg;

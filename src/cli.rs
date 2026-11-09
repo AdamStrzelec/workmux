@@ -627,6 +627,21 @@ enum Commands {
         git: bool,
     },
 
+    /// Show Claude plan usage limits (5h session and weekly windows)
+    Usage {
+        /// Output as JSON
+        #[arg(long, conflicts_with = "tmux")]
+        json: bool,
+
+        /// Output a compact tmux status-bar string
+        #[arg(long)]
+        tmux: bool,
+
+        /// Bypass the cache and query the API now
+        #[arg(long)]
+        refresh: bool,
+    },
+
     /// Wait for agents to reach a target status
     Wait {
         /// Worktree names (supports cross-project with project:handle syntax)
@@ -1280,6 +1295,11 @@ pub fn run() -> Result<()> {
             all,
             git,
         } => command::status::run(&worktrees, json, all, git),
+        Commands::Usage {
+            json,
+            tmux,
+            refresh,
+        } => command::usage::run(json, tmux, refresh),
         Commands::Wait {
             worktrees,
             status,

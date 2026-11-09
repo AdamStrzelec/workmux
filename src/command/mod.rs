@@ -36,6 +36,7 @@ pub mod status;
 pub mod sync_files;
 pub mod uninstall;
 pub mod update;
+pub mod usage;
 pub mod wait;
 
 use anyhow::{Context, Result, anyhow};
