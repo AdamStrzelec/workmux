@@ -27,6 +27,12 @@ Install on a new machine / user:
 git clone -b adam git@github.com:AdamStrzelec/workmux.git && cd workmux && git remote add upstream git@github.com:raine/workmux.git && cargo install --path .
 ```
 
+Install fork guard git hooks (block commits on `main`, pushes to upstream, non-mirror `main` pushes):
+
+```bash
+scripts/install-fork-hooks
+```
+
 Update an existing install (after changes were pushed to `adam`):
 
 ```bash

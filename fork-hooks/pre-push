@@ -1,0 +1,25 @@
+#!/bin/sh
+# Local fork guard (not versioned).
+remote="$1"
+url="$2"
+if [ "$remote" = "upstream" ] || echo "$url" | grep -q "raine/workmux"; then
+  echo "pre-push: refusing to push to upstream (raine/workmux)." >&2
+  exit 1
+fi
+zero=0000000000000000000000000000000000000000
+while read local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "refs/heads/main" ] || continue
+  if [ "$local_sha" = "$zero" ]; then
+    echo "pre-push: refusing to delete 'main' on $remote." >&2
+    exit 1
+  fi
+  if [ "$remote_sha" != "$zero" ] && ! git merge-base --is-ancestor "$remote_sha" "$local_sha"; then
+    echo "pre-push: refusing non-fast-forward push of 'main' to $remote." >&2
+    exit 1
+  fi
+  if ! git merge-base --is-ancestor "$local_sha" refs/remotes/upstream/main 2>/dev/null; then
+    echo "pre-push: 'main' has commits not in upstream/main; keep main a mirror." >&2
+    exit 1
+  fi
+done
+exit 0

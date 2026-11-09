@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Install fork guard hooks (fork-hooks/) into this clone's shared hooks dir.
+# Re-run after pulling changes to fork-hooks/.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+hooks_dir="$(git rev-parse --git-common-dir)/hooks"
+mkdir -p "$hooks_dir"
+
+for hook in "$repo_root"/fork-hooks/*; do
+  name="$(basename "$hook")"
+  target="$hooks_dir/$name"
+  if [[ -e "$target" ]] && ! cmp -s "$hook" "$target"; then
+    cp "$target" "$target.bak"
+    echo "backed up existing $name to $target.bak"
+  fi
+  cp "$hook" "$target"
+  chmod +x "$target"
+  echo "installed $name"
+done
