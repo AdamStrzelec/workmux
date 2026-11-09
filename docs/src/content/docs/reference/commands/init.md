@@ -24,3 +24,15 @@ Running `init` in an already initialized project is safe and never fails:
   `m` in the dashboard).
 - `workmux init --force` regenerates the file from scratch, backing up the
   old one to `.workmux.yaml.bak`.
+
+## Global config (`--global`)
+
+`workmux init --global` writes the default global config
+(`~/.config/workmux/config.yaml`): `nerdfont`, `theme`, `mode: session` and
+`split_panes: false` (every pane in its own tab).
+
+- No file yet: it is created from the template.
+- File exists: only missing defaults (`nerdfont`, `mode`, `split_panes`) are
+  appended; every other line stays as is.
+- `--global --force`: rewrites the file from the template, the old one is
+  saved as `config.yaml.bak`.

@@ -47,7 +47,7 @@ git switch main && git fetch upstream && git merge --ff-only upstream/main && gi
 
 On merge conflicts: fix files, for `Cargo.lock` take upstream's (`git checkout --theirs Cargo.lock`, cargo re-adds own deps on build), then `git add -A && git commit --no-edit` and continue with build/test/push.
 
-Default global config, `~/.config/workmux/config.yaml` (not in the repo, create it by hand):
+Default global config, `~/.config/workmux/config.yaml` (create it with `workmux init --global`, or by hand):
 
 ```yaml
 nerdfont: true
