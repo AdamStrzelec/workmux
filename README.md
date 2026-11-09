@@ -19,6 +19,28 @@
 
 ---
 
+## Fork setup (AdamStrzelec/workmux, branch `adam`)
+
+Install on a new machine / user:
+
+```bash
+git clone -b adam git@github.com:AdamStrzelec/workmux.git && cd workmux && git remote add upstream git@github.com:raine/workmux.git && cargo install --path .
+```
+
+Default global config, `~/.config/workmux/config.yaml` (not in the repo, create it by hand):
+
+```yaml
+nerdfont: true
+theme: night-sorbet
+# Each worktree gets its own tmux session.
+mode: session
+# Every pane (agent, shell, commands) opens in its own tab, no splits.
+split_panes: false
+# Projects shown in the dashboard project picker (`P`), machine specific.
+projects:
+  - ~/repozytoria/some-project
+```
+
 Giga opinionated zero-friction workflow tool for managing
 [git worktrees](https://git-scm.com/docs/git-worktree) and tmux windows as
 isolated development environments. Perfect for running multiple AI agents in
