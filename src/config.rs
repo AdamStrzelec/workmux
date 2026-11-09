@@ -3643,15 +3643,20 @@ impl Config {
     }
 
     /// Create an example .workmux.yaml configuration file
-    pub fn init(worktree_dir: Option<&str>) -> anyhow::Result<()> {
+    pub fn init(worktree_dir: Option<&str>, force: bool) -> anyhow::Result<()> {
         use std::path::PathBuf;
 
         let config_path = PathBuf::from(".workmux.yaml");
 
+        if config_path.exists() && !force {
+            let text = fs::read_to_string(&config_path)?;
+            return init_existing(&config_path, &text, worktree_dir);
+        }
+
         if config_path.exists() {
-            return Err(anyhow::anyhow!(
-                ".workmux.yaml already exists. Remove it first if you want to regenerate it."
-            ));
+            let backup = PathBuf::from(".workmux.yaml.bak");
+            fs::copy(&config_path, &backup)?;
+            println!("✓ Backed up existing config to {}", backup.display());
         }
 
         fs::write(&config_path, init_config_text(worktree_dir))?;
@@ -3671,6 +3676,75 @@ impl Config {
 
         Ok(())
     }
+}
+
+/// Outcome of `workmux init` on a project that already has `.workmux.yaml`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum InitExisting {
+    /// Nothing to change; carries the configured `worktree_dir`, if any.
+    Unchanged(Option<String>),
+    /// `worktree_dir` was set (old value, new file text).
+    WorktreeDirUpdated(Option<String>, String),
+}
+
+/// Decide what `workmux init` does with an existing config text.
+pub fn plan_init_existing(text: &str, worktree_dir: Option<&str>) -> anyhow::Result<InitExisting> {
+    let doc: serde_yaml::Value = if text.trim().is_empty() {
+        serde_yaml::Value::Null
+    } else {
+        serde_yaml::from_str(text).context(".workmux.yaml is not valid YAML")?
+    };
+    let current = doc
+        .get("worktree_dir")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    match worktree_dir {
+        Some(dir) if current.as_deref() != Some(dir) => {
+            let value = serde_yaml::Value::String(dir.to_string());
+            let new_text =
+                crate::config_yaml::render_top_level_key(text, "worktree_dir", Some(&value))?;
+            Ok(InitExisting::WorktreeDirUpdated(current, new_text))
+        }
+        _ => Ok(InitExisting::Unchanged(current)),
+    }
+}
+
+fn init_existing(
+    path: &std::path::Path,
+    text: &str,
+    worktree_dir: Option<&str>,
+) -> anyhow::Result<()> {
+    match plan_init_existing(text, worktree_dir)? {
+        InitExisting::WorktreeDirUpdated(old, new_text) => {
+            fs::write(path, new_text)?;
+            println!(
+                "✓ Updated worktree_dir in .workmux.yaml: {} -> {}",
+                old.as_deref().unwrap_or("default"),
+                worktree_dir.unwrap_or_default()
+            );
+            println!(
+                "  Existing worktrees stay where they are; move them from the dashboard (C, then m)."
+            );
+        }
+        InitExisting::Unchanged(current) => {
+            println!("✓ Project already initialized (.workmux.yaml exists, left unchanged)");
+            match current {
+                Some(dir) => println!("  Worktree directory: {}", dir),
+                None => {
+                    println!("  Worktree directory: default or detected from existing worktrees")
+                }
+            }
+            println!("\nNext steps:");
+            println!(
+                "  workmux dashboard              open the dashboard (C edits project config)"
+            );
+            println!("  workmux init -w <DIR>          change the worktree directory");
+            println!(
+                "  workmux init --force           regenerate the file (backup to .workmux.yaml.bak)"
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Commented `worktree_dir` example line in [`EXAMPLE_PROJECT_CONFIG`].
@@ -4131,7 +4205,53 @@ pub fn is_agent_command(command_line: &str, agent_command: &str) -> bool {
 
 #[cfg(test)]
 mod init_config_tests {
-    use super::{Config, EXAMPLE_PROJECT_CONFIG, init_config_text};
+    use super::{
+        Config, EXAMPLE_PROJECT_CONFIG, InitExisting, init_config_text, plan_init_existing,
+    };
+
+    #[test]
+    fn init_existing_without_flag_is_unchanged() {
+        let text = "# keep me\nworktree_dir: .trees\nagent: claude\n";
+        assert_eq!(
+            plan_init_existing(text, None).unwrap(),
+            InitExisting::Unchanged(Some(".trees".into()))
+        );
+        assert_eq!(
+            plan_init_existing(text, Some(".trees")).unwrap(),
+            InitExisting::Unchanged(Some(".trees".into()))
+        );
+        assert_eq!(
+            plan_init_existing("", None).unwrap(),
+            InitExisting::Unchanged(None)
+        );
+    }
+
+    #[test]
+    fn init_existing_updates_worktree_dir_keeping_other_lines() {
+        let text = "# keep me\nagent: claude\n";
+        let InitExisting::WorktreeDirUpdated(old, new_text) =
+            plan_init_existing(text, Some(".claude/worktrees")).unwrap()
+        else {
+            panic!("expected update");
+        };
+        assert_eq!(old, None);
+        assert!(new_text.starts_with("# keep me\nagent: claude\n"));
+        let cfg: Config = serde_yaml::from_str(&new_text).unwrap();
+        assert_eq!(cfg.worktree_dir.as_deref(), Some(".claude/worktrees"));
+
+        let InitExisting::WorktreeDirUpdated(old, replaced) =
+            plan_init_existing("worktree_dir: a\nagent: claude\n", Some("b")).unwrap()
+        else {
+            panic!("expected update");
+        };
+        assert_eq!(old.as_deref(), Some("a"));
+        assert_eq!(replaced, "worktree_dir: b\nagent: claude\n");
+    }
+
+    #[test]
+    fn init_existing_rejects_invalid_yaml() {
+        assert!(plan_init_existing("a: [", Some("x")).is_err());
+    }
 
     #[test]
     fn without_dir_is_unchanged() {

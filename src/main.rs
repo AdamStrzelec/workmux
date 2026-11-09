@@ -8,6 +8,7 @@ mod cli;
 mod cmd;
 mod command;
 mod config;
+mod config_yaml;
 mod creation_time;
 mod frozen_config;
 mod git;

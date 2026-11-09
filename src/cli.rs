@@ -696,6 +696,10 @@ enum Commands {
         /// supports `~` and `{project}`.
         #[arg(short = 'w', long = "worktree-dir", value_name = "DIR")]
         worktree_dir: Option<String>,
+        /// Regenerate .workmux.yaml even if it exists (old file is backed up
+        /// to .workmux.yaml.bak).
+        #[arg(long)]
+        force: bool,
     },
 
     /// Set up agent status tracking hooks and install skills
@@ -1297,7 +1301,10 @@ pub fn run() -> Result<()> {
         }
         Commands::Exec { run_dir } => command::exec::run(&run_dir),
         Commands::SyncFiles { all } => command::sync_files::run(all),
-        Commands::Init { worktree_dir } => crate::config::Config::init(worktree_dir.as_deref()),
+        Commands::Init {
+            worktree_dir,
+            force,
+        } => crate::config::Config::init(worktree_dir.as_deref(), force),
         Commands::Setup { hooks, skills } => command::setup::run(hooks, skills),
         Commands::Uninstall { dry_run } => command::uninstall::run(dry_run),
         Commands::Docs => command::docs::run(),
