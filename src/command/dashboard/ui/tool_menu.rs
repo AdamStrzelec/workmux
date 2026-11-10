@@ -35,10 +35,26 @@ pub fn render_tool_menu(f: &mut Frame, app: &App) {
             Span::styled(tool.name.clone(), Style::default().fg(p.text)),
             Span::styled(format!("  {}", tool.command), muted),
         ];
+        let window = crate::claude_launch::tool_window_name(&menu.handle, &tool.name);
+        let ports: Vec<String> = app
+            .ports
+            .iter()
+            .filter(|l| l.window.as_deref().is_some_and(|w| w.ends_with(&window)))
+            .map(|l| format!(":{}", l.port))
+            .collect();
         if *running {
+            let label = if ports.is_empty() {
+                "  (running, jump)".to_string()
+            } else {
+                format!("  (running on {}, jump)", ports.join(" "))
+            };
+            spans.push(Span::styled(label, Style::default().fg(p.success)));
+        } else if let Some(port) = tool.port
+            && let Some(holder) = crate::ports::holder(&app.ports, port)
+        {
             spans.push(Span::styled(
-                "  (running, jump)",
-                Style::default().fg(p.success),
+                format!("  (port {port} busy: {} {})", holder.command, holder.pid),
+                Style::default().fg(p.danger),
             ));
         } else if !valid {
             spans.push(Span::styled("  (key must be one character)", muted));

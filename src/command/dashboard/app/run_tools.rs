@@ -104,12 +104,26 @@ impl App {
         };
         let menu = self.pending_tool_menu.take().expect("menu checked above");
         let tool = menu.tools[idx].clone();
+        // Busy port: warn (modal) but start anyway; dev servers often pick another port.
+        let busy = tool.port.and_then(|port| {
+            let full = crate::multiplexer::util::prefixed(
+                self.config.window_prefix(),
+                &tool_window_name(&menu.handle, &tool.name),
+            );
+            let already_running = find_window(&self.all_windows(), &full).is_some();
+            (!already_running)
+                .then(|| crate::ports::busy_warning(&crate::ports::scan(), port, &tool.name))
+                .flatten()
+        });
         let message = match self.run_tool(&menu.handle, &menu.path, &tool) {
             Ok(true) => format!("{}: already running, switched to it", tool.name),
             Ok(false) => format!("{}: started", tool.name),
             Err(e) => format!("Failed to run {}: {e:#}", tool.name),
         };
         self.status_message = Some((message, std::time::Instant::now()));
+        if let Some(warning) = busy {
+            self.error_modal = Some(warning);
+        }
         self.trigger_worktree_refetch();
     }
 
@@ -273,10 +287,12 @@ mod tests {
                     key: "d".into(),
                     name: "dev".into(),
                     command: "npm run dev".into(),
+                    port: None,
                 },
                 ToolConfig {
                     key: "t".into(),
                     name: "test".into(),
+                    port: None,
                     command: "npm test".into(),
                 },
             ],

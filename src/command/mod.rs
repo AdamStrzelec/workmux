@@ -17,6 +17,7 @@ pub mod node;
 pub mod open;
 pub mod pane_history;
 pub mod path;
+pub mod ports;
 pub mod reap_agents;
 pub mod rebase;
 pub mod remote;

@@ -34,6 +34,12 @@ pub fn format_duration(secs: i64) -> String {
     }
 }
 
+/// Progress bar of `width` cells for `percent` (rounded, clamped to 100).
+pub fn bar(percent: u8, width: usize) -> String {
+    let filled = (usize::from(percent.min(100)) * width + 50) / 100;
+    format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
+}
+
 /// Seconds until the window resets, if known and still in the future.
 pub fn until_reset(w: &Window, now: i64) -> Option<i64> {
     w.resets_at_unix.map(|t| t - now).filter(|d| *d > 0)
@@ -59,14 +65,15 @@ fn tmux_color(l: Level) -> &'static str {
 }
 
 /// One-line string for the tmux status bar, e.g.
-/// `#[fg=green]5h 28%#[default] #[fg=yellow]7d 63%#[default]`.
+/// `#[fg=green]5h █░░░░ 28%#[default] #[fg=yellow]7d ███░░ 63%#[default]`.
 pub fn tmux_status(snap: &Snapshot) -> String {
     let mut parts = Vec::new();
     for (label, w) in [("5h", &snap.session), ("7d", &snap.weekly)] {
         if let Some(p) = w.as_ref().and_then(|w| w.used_percent) {
             parts.push(format!(
-                "#[fg={}]{label} {p}%#[default]",
-                tmux_color(level(p))
+                "#[fg={}]{label} {} {p}%#[default]",
+                tmux_color(level(p)),
+                bar(p, 5)
             ));
         }
     }
@@ -83,6 +90,15 @@ mod tests {
             window_minutes: None,
             resets_at_unix: resets,
         }
+    }
+
+    #[test]
+    fn bars() {
+        assert_eq!(bar(0, 4), "░░░░");
+        assert_eq!(bar(50, 4), "██░░");
+        assert_eq!(bar(100, 4), "████");
+        assert_eq!(bar(200, 4), "████");
+        assert_eq!(bar(28, 10), "███░░░░░░░");
     }
 
     #[test]
@@ -131,7 +147,7 @@ mod tests {
         };
         assert_eq!(
             tmux_status(&snap),
-            "#[fg=green]5h 28%#[default] #[fg=red]7d 85%#[default]"
+            "#[fg=green]5h █░░░░ 28%#[default] #[fg=red]7d ████░ 85%#[default]"
         );
     }
 }

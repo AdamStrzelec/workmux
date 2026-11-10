@@ -363,6 +363,17 @@ tools:
   - { key: t, name: test, command: npm test -- --watch }
 ```
 
+Give a tool a `port` to get a warning (red modal) when that port is already
+taken as you start it; the tool still starts:
+
+```yaml
+tools:
+  - { key: d, name: dev, command: npm run dev, port: 3000 }
+```
+
+The dashboard shows listening ports per worktree (`ports` column, preview and
+`x` menu); `workmux ports` lists them for all projects.
+
 To keep tool windows open when closing the worktree window with `c`, use the
 map form:
 

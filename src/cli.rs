@@ -660,6 +660,17 @@ enum Commands {
         git: bool,
     },
 
+    /// Show listening TCP ports with their process, worktree and tool window
+    Ports {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Show every listener, not only those inside git worktrees or tmux
+        #[arg(long)]
+        all: bool,
+    },
+
     /// Show Claude plan usage limits (5h session and weekly windows)
     Usage {
         /// Output as JSON
@@ -1357,6 +1368,7 @@ pub fn run() -> Result<()> {
             all,
             git,
         } => command::status::run(&worktrees, json, all, git),
+        Commands::Ports { json, all } => command::ports::run(json, all),
         Commands::Usage {
             json,
             tmux,

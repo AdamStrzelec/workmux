@@ -39,6 +39,7 @@ use super::ui::theme::ThemePalette;
 
 const PR_FETCH_INTERVAL: Duration = Duration::from_secs(30);
 const USAGE_FETCH_INTERVAL: Duration = Duration::from_secs(60);
+const PORTS_FETCH_INTERVAL: Duration = Duration::from_secs(5);
 
 use super::scope::ScopeMode;
 use super::settings::{load_hide_stale, load_last_pane_id, load_preview_size};
@@ -93,6 +94,10 @@ pub struct App {
     pub is_git_fetching: Arc<AtomicBool>,
     /// Latest Claude plan usage snapshot, shown in the tab header
     pub usage: Option<crate::usage::Snapshot>,
+    /// Listening TCP ports, rescanned every few seconds.
+    pub ports: Vec<crate::ports::Listener>,
+    last_ports_fetch: std::time::Instant,
+    is_ports_fetching: Arc<AtomicBool>,
     last_usage_fetch: std::time::Instant,
     is_usage_fetching: Arc<AtomicBool>,
     /// PR info indexed by canonical common Git directory, then branch name
@@ -292,6 +297,9 @@ impl App {
             last_git_fetch: std::time::Instant::now() - Duration::from_secs(60),
             is_git_fetching: Arc::new(AtomicBool::new(false)),
             usage: crate::usage::cache::cached_snapshot(),
+            ports: Vec::new(),
+            last_ports_fetch: std::time::Instant::now() - PORTS_FETCH_INTERVAL,
+            is_ports_fetching: Arc::new(AtomicBool::new(false)),
             last_usage_fetch: std::time::Instant::now() - USAGE_FETCH_INTERVAL,
             is_usage_fetching: Arc::new(AtomicBool::new(false)),
             pr_statuses,
@@ -455,6 +463,11 @@ impl App {
             self.spawn_git_status_fetch();
         }
 
+        if self.last_ports_fetch.elapsed() >= PORTS_FETCH_INTERVAL {
+            self.last_ports_fetch = std::time::Instant::now();
+            self.spawn_ports_fetch();
+        }
+
         // Refresh Claude usage once a minute (the probe is cached and locked)
         if self.last_usage_fetch.elapsed() >= USAGE_FETCH_INTERVAL {
             self.last_usage_fetch = std::time::Instant::now();
@@ -540,4 +553,14 @@ fn load_sleeping_pane_ids(mux: &dyn Multiplexer) -> HashSet<String> {
         .flatten()
         .map(|value| value.split_whitespace().map(str::to_string).collect())
         .unwrap_or_default()
+}
+
+impl App {
+    /// Listeners whose process runs inside `worktree`.
+    pub fn ports_of(&self, worktree: &std::path::Path) -> Vec<&crate::ports::Listener> {
+        self.ports
+            .iter()
+            .filter(|l| l.worktree.as_deref() == Some(worktree))
+            .collect()
+    }
 }

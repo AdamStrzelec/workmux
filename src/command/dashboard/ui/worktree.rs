@@ -36,7 +36,16 @@ pub fn render_worktree_table(f: &mut Frame, app: &mut App, area: Rect) {
         worktree.pr_info.is_some() || app.get_checks_for_worktree(worktree).is_some()
     });
 
-    let columns = visible_columns(&app.config.dashboard.worktree_columns(), show_pr_column);
+    let mut columns = visible_columns(&app.config.dashboard.worktree_columns(), show_pr_column);
+    // Ports column only when some worktree has a listening process.
+    if !app
+        .worktrees
+        .iter()
+        .any(|wt| !app.ports_of(&wt.path).is_empty())
+        && columns.len() > 1
+    {
+        columns.retain(|c| *c != WorktreeColumn::Ports);
+    }
     let show_pr_column = columns.contains(&WorktreeColumn::Pr);
 
     // Pre-compute row data
@@ -136,6 +145,12 @@ pub fn render_worktree_table(f: &mut Frame, app: &mut App, area: Rect) {
                 pr_issues,
                 agent_line: format::spans_to_line(agent_spans),
                 has_mux_window: wt.has_mux_window,
+                ports: app
+                    .ports_of(&wt.path)
+                    .iter()
+                    .map(|l| format!(":{}", l.port))
+                    .collect::<Vec<_>>()
+                    .join(" "),
                 age: age.unwrap_or_default(),
             }
         })
@@ -169,6 +184,7 @@ struct WorktreeRowData {
     pr_issues: String,
     agent_line: Line<'static>,
     has_mux_window: bool,
+    ports: String,
     age: String,
 }
 
@@ -210,6 +226,9 @@ fn worktree_cell(
                 Cell::from("-").style(Style::default().fg(palette.dimmed))
             }
         }
+        WorktreeColumn::Ports => {
+            Cell::from(row.ports.clone()).style(Style::default().fg(palette.info))
+        }
         WorktreeColumn::Age => {
             Cell::from(row.age.clone()).style(Style::default().fg(palette.dimmed))
         }
@@ -246,6 +265,7 @@ fn build_worktree_table(
             WorktreeColumn::PrTitle => ResourceHeaderCell::Plain("PR Title"),
             WorktreeColumn::PrIssues => ResourceHeaderCell::Plain("PR Issues"),
             WorktreeColumn::Mux => ResourceHeaderCell::Plain("Mux"),
+            WorktreeColumn::Ports => ResourceHeaderCell::Plain("Ports"),
             WorktreeColumn::Age => ResourceHeaderCell::Plain("Age"),
             WorktreeColumn::Agent => ResourceHeaderCell::Plain("Agent"),
         })
@@ -294,6 +314,8 @@ fn build_worktree_table(
         .unwrap_or(0)
         .clamp(5, u16::MAX as usize) as u16;
 
+    let ports: Vec<String> = row_data.iter().map(|row| row.ports.clone()).collect();
+    let max_ports_width = format::calc_column_width(&ports, 5, 24, 1);
     let last_column = columns.len().saturating_sub(1);
     let constraints: Vec<_> = columns
         .iter()
@@ -309,6 +331,7 @@ fn build_worktree_table(
             WorktreeColumn::PrIssues if index == last_column => Constraint::Fill(1),
             WorktreeColumn::PrIssues => Constraint::Length(max_pr_issues_width),
             WorktreeColumn::Mux => Constraint::Length(4),
+            WorktreeColumn::Ports => Constraint::Length(max_ports_width),
             WorktreeColumn::Age => Constraint::Length(4),
             // Fill only at the end, so columns after Agent stay contiguous.
             WorktreeColumn::Agent if index == last_column => Constraint::Fill(1),
@@ -579,6 +602,22 @@ fn render_info_panel(
     ];
     lines.push(Line::from(mux_spans));
 
+    // Listening ports: `dev → :3000 (node 4123)`
+    for (i, l) in app.ports_of(&wt.path).into_iter().enumerate() {
+        let label = if i == 0 { "Ports   " } else { "        " };
+        lines.push(Line::from(vec![
+            Span::styled(label, label_style),
+            Span::styled(
+                format!("{} → :{}", l.tool().unwrap_or("-"), l.port),
+                Style::default().fg(app.palette.info),
+            ),
+            Span::styled(
+                format!(" ({} {})", l.command, l.pid),
+                Style::default().fg(app.palette.dimmed),
+            ),
+        ]));
+    }
+
     let paragraph = Paragraph::new(Text::from(lines)).block(block);
     f.render_widget(paragraph, area);
 }
@@ -650,6 +689,7 @@ mod tests {
             pr_issues: "#308 #270".into(),
             agent_line: Line::from("working"),
             has_mux_window: true,
+            ports: String::new(),
             age: "2h".into(),
         }
     }

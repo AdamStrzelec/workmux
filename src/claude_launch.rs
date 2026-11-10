@@ -290,6 +290,9 @@ pub struct ToolConfig {
     pub key: String,
     pub name: String,
     pub command: String,
+    /// Port the tool listens on; a warning is shown when it is already taken.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
 }
 
 impl ToolConfig {
@@ -620,6 +623,7 @@ mod tests {
                 key: "d".into(),
                 name: "dev".into(),
                 command: "npm run dev".into(),
+                port: None,
             }],
             close_with_session: None,
         };
