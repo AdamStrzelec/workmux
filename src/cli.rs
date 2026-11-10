@@ -747,6 +747,10 @@ enum Commands {
         /// Show only the newest N entries
         #[arg(long, default_value_t = 30)]
         last: usize,
+
+        /// Read the events all users share in the team dir (`team.share_audit`)
+        #[arg(long)]
+        team: bool,
     },
 
     /// Show what everyone sharing the team directory is working on
@@ -1463,7 +1467,7 @@ pub fn run() -> Result<()> {
         Commands::Guard { json } => command::guard::run(json),
         Commands::Handoff { json } => command::handoff::run(json),
         Commands::Collisions { json } => command::collisions::run(json),
-        Commands::Audit { json, last } => command::audit::run(json, last),
+        Commands::Audit { json, last, team } => command::audit::run(json, last, team),
         Commands::Team { json, no_publish } => command::team::run(json, no_publish),
         Commands::Wait {
             worktrees,

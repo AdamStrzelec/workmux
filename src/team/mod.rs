@@ -33,6 +33,10 @@ pub struct TeamConfig {
     /// Project names that are never published.
     #[serde(default)]
     pub exclude_projects: Vec<String>,
+    /// Also append audit events to `audit-<user>.log` in the team dir so
+    /// others can read them with `workmux audit --team`. Off by default.
+    #[serde(default)]
+    pub share_audit: bool,
 }
 
 fn default_true() -> bool {

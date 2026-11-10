@@ -67,6 +67,62 @@ pub fn record_action(action: String, ok: bool) {
         ok,
     };
     let _ = append(&event);
+    let _ = share(&cfg, &event);
+}
+
+/// Mirror the event into the team dir when `team.share_audit` is on.
+/// Projects in `team.exclude_projects` are never shared.
+fn share(cfg: &crate::team::TeamConfig, event: &Event) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    if !cfg.share_audit || cfg.exclude_projects.contains(&event.project) {
+        return Ok(());
+    }
+    let Ok(dir) = crate::team::resolve_dir(cfg) else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(shared_file_name(&event.user));
+    crate::errlog::trim(&path, MAX_BYTES)?;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o664)
+        .open(&path)?;
+    // Group-writable regardless of umask, like the team snapshots.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o664));
+    }
+    let line = serde_json::to_string(event).map_err(std::io::Error::other)?;
+    writeln!(f, "{line}")
+}
+
+fn shared_file_name(user: &str) -> String {
+    format!("audit-{}.log", crate::team::sanitize_name(user))
+}
+
+/// Parse JSON-lines audit text, skipping malformed lines.
+pub fn parse_lines(text: &str) -> Vec<Event> {
+    text.lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect()
+}
+
+/// All users' shared events from the team dir, oldest first.
+pub fn read_shared(dir: &std::path::Path) -> std::io::Result<Vec<Event>> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir)?.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with("audit-") || !name.ends_with(".log") {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(entry.path()) {
+            out.extend(parse_lines(&text));
+        }
+    }
+    out.sort_by_key(|e| e.ts);
+    Ok(out)
 }
 
 fn now() -> u64 {
@@ -97,9 +153,7 @@ pub fn read_all() -> Vec<Event> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
-    text.lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect()
+    parse_lines(&text)
 }
 
 #[cfg(test)]
@@ -127,5 +181,32 @@ mod tests {
         assert_eq!(action_label(&a(&["workmux", "hunk", "list"])), None);
         assert_eq!(action_label(&a(&["workmux", "status"])), None);
         assert_eq!(action_label(&a(&["workmux"])), None);
+    }
+
+    #[test]
+    fn shared_events_merge_sorted_and_skip_junk() {
+        let dir = tempfile::tempdir().unwrap();
+        let ev = |ts, user: &str| {
+            serde_json::to_string(&Event {
+                ts,
+                user: user.into(),
+                action: "merge".into(),
+                project: "p".into(),
+                branch: "b".into(),
+                ok: true,
+            })
+            .unwrap()
+        };
+        std::fs::write(
+            dir.path().join("audit-ania.log"),
+            format!("{}\nnot json\n{}\n", ev(5, "ania"), ev(1, "ania")),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("audit-marek.log"), ev(3, "marek")).unwrap();
+        std::fs::write(dir.path().join("ania.json"), "{}").unwrap();
+        let all = read_shared(dir.path()).unwrap();
+        let ts: Vec<_> = all.iter().map(|e| e.ts).collect();
+        assert_eq!(ts, vec![1, 3, 5]);
+        assert_eq!(shared_file_name("an/ia"), "audit-an_ia.log");
     }
 }
