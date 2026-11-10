@@ -71,6 +71,40 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 - Konfiguracja kluczy SSH, żeby część rzeczy robić zdalnie bez pracy na tym samym userze.
 - Zachowana komunikacja i wymiana danych między osobami.
 
+### 3.9 Jak działa `workmux team` (opis szczegółowy)
+
+**Cel:** wspólnicy na jednej maszynie (osobni userzy Linuksa) widzą, kto nad czym pracuje, bez demona i bez serwera.
+
+**Mechanizm**
+1. Każdy user ma własny plik `<team.dir>/<user>.json` (np. `/var/lib/workmux/ania.json`). Zapisuje tylko swój plik, nikt nie edytuje cudzych.
+2. Plik to migawka: user, host, czas publikacji (`published_at`) i lista agentów. Dla agenta: projekt, worktree, branch, status, sesja i okno tmux, tytuł panelu, czas ostatniej aktywności.
+3. Zapis jest atomowy (plik tymczasowy + `rename`), więc czytający nigdy nie zobaczy połowy pliku. Prawa 0664: właściciel i grupa mogą czytać i pisać.
+4. Nazwa pliku jest czyszczona (`../x` staje się `_x`), więc nazwa usera nie wyjdzie poza katalog.
+5. Odczyt (`workmux team`) czyta wszystkie `*.json` w katalogu, pomija uszkodzone i ukryte, sortuje po userze i wypisuje tabelę USER / PROJECT / BRANCH / STATUS / WINDOW / ACTIVE.
+6. Migawka starsza niż `stale_after_secs` (domyślnie 300 s) jest oznaczona `(stale 12m)`. Zwykle znaczy to, że user ma zamknięty dashboard.
+
+**Kiedy migawka jest publikowana**
+- Ręcznie: `workmux team` publikuje twoją migawkę i pokazuje tabelę. `--no-publish` tylko czyta, `--json` daje JSON.
+- Automatycznie: otwarty dashboard co 60 s publikuje w wątku w tle (`auto_publish`, domyślnie włączone). Bez ustawionego `team.dir` nic się nie dzieje.
+- Bez dashboardu migawka się nie odświeża, a po 5 minutach jest `stale`.
+
+**Konfiguracja (tylko globalna, sekcja `team`)**
+- `dir`: wspólny katalog; bez niego funkcja jest wyłączona.
+- `name`: nazwa widoczna dla innych (domyślnie `$USER`).
+- `stale_after_secs`: próg nieaktualności.
+- `auto_publish`: publikacja z dashboardu (domyślnie `true`).
+- `share_titles`: czy publikować tytuły paneli (domyślnie `false`, bo często zawierają streszczenie promptu).
+- `exclude_projects`: projekty, które nigdy nie trafią do migawki.
+
+**Przygotowanie katalogu (raz, root):** utworzyć grupę (np. `workmux`), dodać do niej userów, `mkdir /var/lib/workmux`, `chgrp workmux`, `chmod 2775` (bit setgid, żeby nowe pliki dziedziczyły grupę).
+
+**Prywatność i granice**
+- Widoczne dla grupy: nazwy projektów, branche, statusy, nazwy okien, czasy. Tytuły tylko po włączeniu `share_titles`.
+- Nie ma uwierzytelniania: każdy z grupy może nadpisać cudzy plik (prawa grupowe). To zaufanie między wspólnikami, nie zabezpieczenie.
+- Nie przesyła treści kodu, promptów ani rozmów.
+
+**Czego jeszcze nie ma:** widoczność aktywnego okna (czy user patrzy na dany pane), szybkie przełączanie między userami, publikacja natychmiast po zmianie statusu (jest co 60 s), kolumna team w dashboardzie.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
