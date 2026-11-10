@@ -184,6 +184,22 @@ Ograniczenia (uczciwie):
 - Literówka lub błąd składni w configu daje cichy powrót do `trusted` (fail-open). Do rozważenia: fail-closed.
 - Blokuje tylko komendy workmux, nie `hunk` poza listą wyżej, i nie obejmuje zdalnych workspace'ów po stronie węzła (`node`).
 
+### 3.14 Wykrywanie kolizji `workmux collisions` (opis szczegółowy)
+
+Cel: zanim dwie osoby (albo dwa agenty) skończą pracę i pokłócą się w merge, pokazać, że dotykają tego samego.
+
+Krok po kroku:
+1. Dla każdego worktree repozytorium (bez głównego checkoutu) komenda zbiera zmienione pliki tak samo jak `guard`: commity od bazy plus zmiany niezacommitowane i nieśledzone.
+2. Pliki zmienione w co najmniej dwóch różnych branchach wypisuje jako `file <plik>: <branch1>, <branch2>`.
+3. Jeśli skonfigurowany jest katalog `team.dir`, czyta migawki innych użytkowników i wypisuje `branch <branch>: <user1>, <user2>` dla branchy tego samego projektu, na których pracuje agent co najmniej dwóch różnych użytkowników. Migawki starsze niż `team.stale_after_secs` są pomijane. Bez `team.dir` ta część jest cicho pominięta.
+4. `--json` daje `{"files": {...}, "branches": {...}}`. Kod wyjścia 2, gdy znaleziono jakąkolwiek kolizję, 0 gdy nic.
+
+Ograniczenia (uczciwie):
+- Tylko wykrywa, nie blokuje ani niczego nie zapisuje do audit logu.
+- Zmiany plików widzi tylko w worktree tego samego repozytorium na tej maszynie. Migawki team zawierają branche, nie pliki (celowo, ze względu na prywatność), więc kolizji na poziomie plików między użytkownikami nie widać.
+- Nazwa projektu to nazwa katalogu repo, więc dwa różne repozytoria o tej samej nazwie zlałyby się w jedno.
+- Wymaga ręcznego uruchomienia; nie ma jeszcze ostrzeżenia w dashboardzie ani przy `workmux add`.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -196,6 +212,8 @@ Ograniczenia (uczciwie):
    - ✅ `safety_profile` w globalnym configu: ograniczenia komend workmux (patrz 3.13)
    - ⬜ tryb Claude per profil, fail-closed przy błędnym configu, wymuszenie poza workmux (protected branch, hooki serwera)
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
+   - ✅ `workmux collisions [--json]`: pliki zmienione w 2+ worktree oraz branche z agentami 2+ użytkowników (patrz 3.14)
+   - ⬜ ostrzeżenie w dashboardzie i przy `workmux add`, wpis w audit logu, kolizje plików między użytkownikami (wymaga listy plików w migawce)
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
 6. **Snapshot / szybki rollback worktree**, gdy agent coś zepsuje.
@@ -245,4 +263,5 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `workmux guard` | Ustaw w globalnym configu `guard: {protected_paths: [".env*"]}`, zmień `.env` w worktree (też bez commita) i uruchom `workmux guard`: ma wypisać branch i plik, kod wyjścia 2. Sprawdź też wzorzec ze `/` | Testy pokrywają tylko dopasowanie wzorców, nie git na prawdziwym repo |
 | `workmux merge` + guard | Z `guard.protected_paths: [".env*"]` zmień `.env` w worktree i uruchom `workmux merge`: ma odmówić z listą plików. Powtórz z `--allow-protected`: ma przejść. Sprawdź też merge bez zmian chronionych | Brak testu na prawdziwym repo, tylko kompilacja i istniejące testy |
 | `safety_profile` | W globalnym configu ustaw `safety_profile: review-only`. Sprawdź: `workmux merge x`, `workmux remove x`, `workmux hunk discard` mają odmówić; `workmux add`, `workmux list`, `workmux hunk commit` mają działać. Potem `safe` (blokuje tylko rewrite/discard i `merge --allow-protected`). Zajrzyj do `workmux audit` | Testy pokrywają tylko klasyfikację komend, nie przepływ na prawdziwym configu |
+| `workmux collisions` | Zmień ten sam plik w dwóch worktree i uruchom: ma wypisać `file ...`, kod wyjścia 2. Z `team.dir` i dwoma użytkownikami na tym samym branchu ma wypisać `branch ...` | Testy pokrywają tylko logikę łączenia; na realnym repo sprawdzony tylko przypadek bez kolizji |
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |

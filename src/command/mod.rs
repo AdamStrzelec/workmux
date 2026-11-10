@@ -5,6 +5,7 @@ pub mod capture;
 pub mod changelog;
 pub mod clipboard_read;
 pub mod close;
+pub mod collisions;
 pub mod config;
 pub mod dashboard;
 pub mod docs;

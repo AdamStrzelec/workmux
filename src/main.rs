@@ -8,6 +8,7 @@ mod claude;
 mod claude_launch;
 mod cli;
 mod cmd;
+mod collision;
 mod command;
 mod config;
 mod config_yaml;

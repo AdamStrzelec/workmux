@@ -714,6 +714,13 @@ enum Commands {
         json: bool,
     },
 
+    /// Report files changed in several worktrees and branches shared by several users
+    Collisions {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show the local audit log of state-changing commands
     Audit {
         /// Output as JSON
@@ -1429,6 +1436,7 @@ pub fn run() -> Result<()> {
         } => command::usage::run(json, tmux, refresh),
         Commands::Errors { json, last } => command::errors::run(json, last),
         Commands::Guard { json } => command::guard::run(json),
+        Commands::Collisions { json } => command::collisions::run(json),
         Commands::Audit { json, last } => command::audit::run(json, last),
         Commands::Team { json, no_publish } => command::team::run(json, no_publish),
         Commands::Wait {
