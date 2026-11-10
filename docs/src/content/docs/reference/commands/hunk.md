@@ -15,7 +15,7 @@ Only changes to tracked files show up in the diff. Use `git add -N <file>` to
 make a new file visible.
 
 ```bash
-workmux hunk list [--staged] [--file PATH] [--commit REV] [--full]
+workmux hunk list [--staged] [--file PATH] [--commit REV] [--full] [--blame]
 workmux hunk show ID [--commit REV]
 workmux hunk stage ID... [--lines START-END]
 workmux hunk unstage ID... [--lines START-END]
@@ -23,6 +23,27 @@ workmux hunk discard ID... [--lines START-END]
 workmux hunk commit -m MESSAGE ID...
 workmux hunk commit-to BRANCH -m MESSAGE ID...
 ```
+
+## Blame
+
+`list --blame` prefixes every line of each hunk with the 7-character hash of the
+commit that introduced it:
+
+```
+bf4940f f (+1 -1)
+  10fac99  a
+  caa32fe  B
+  10fac99 -c
+  0000000 +X
+```
+
+- Context and removed lines show the commit that introduced them.
+- Added lines show `0000000` while uncommitted; with `--commit` they show that
+  commit.
+- `-------` means blame was not available. This happens for removed lines of
+  an unstaged diff when the file also has staged changes, because the old side
+  is then the index and not `HEAD`.
+- `--blame` takes precedence over `--full`.
 
 ## Partial hunks
 

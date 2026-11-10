@@ -5,6 +5,7 @@
 //! line shifts. Only tracked-file changes appear in `git diff`; new files must
 //! be added with `git add -N <file>` first.
 
+mod blame;
 mod diff;
 mod id;
 mod ops;

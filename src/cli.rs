@@ -2145,6 +2145,9 @@ pub enum HunkCommand {
         /// Show every line with its hunk-relative number
         #[arg(long)]
         full: bool,
+        /// Show which commit introduced each line (takes precedence over --full)
+        #[arg(long)]
+        blame: bool,
     },
     /// Show one hunk with line numbers
     Show {

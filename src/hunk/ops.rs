@@ -2,11 +2,15 @@ use anyhow::{Context, Result};
 use std::io::Write;
 use std::process::Stdio;
 
+use super::blame::{Source, blame_hunk};
 use super::diff::{
     DiffHunk, check_supported, git_cmd, git_diff, git_diff_commit, parse_diff, run_git,
 };
 use super::id::assign_ids;
 use super::patch::{ApplyMode, apply_patch, apply_patch_to_index, build_patch, slice_hunk};
+
+/// A resolved selection: hunk ID, optional line ranges, the hunk itself.
+type Entry<'a> = (String, Vec<(usize, usize)>, &'a DiffHunk);
 
 const MAX_PREVIEW_LINES: usize = 4;
 
@@ -17,7 +21,13 @@ fn func_context(header: &str) -> &str {
         .unwrap_or("")
 }
 
-pub fn list(staged: bool, file: Option<&str>, commit: Option<&str>, full: bool) -> Result<()> {
+pub fn list(
+    staged: bool,
+    file: Option<&str>,
+    commit: Option<&str>,
+    full: bool,
+    blame: bool,
+) -> Result<()> {
     let output = match commit {
         Some(c) => git_diff_commit(c, file)?,
         None => git_diff(staged, file)?,
@@ -34,7 +44,19 @@ pub fn list(staged: bool, file: Option<&str>, commit: Option<&str>, full: bool) 
         };
         println!("{id} {}{ctx} (+{adds} -{dels})", hunk.file);
 
-        if full {
+        if blame {
+            let source = match (commit, staged) {
+                (Some(c), _) => Source::Commit(c),
+                (None, true) => Source::Staged,
+                (None, false) => Source::Unstaged,
+            };
+            for (line, hash) in hunk.lines.iter().zip(blame_hunk(hunk, &source)) {
+                match hash {
+                    Some(hash) => println!("  {hash} {line}"),
+                    None => println!("  {line}"),
+                }
+            }
+        } else if full {
             print_numbered(hunk);
         } else {
             let changed: Vec<&String> = hunk
@@ -116,7 +138,7 @@ pub fn parse_line_range(s: &str) -> Result<(usize, usize), String> {
 
 struct Resolved<'a> {
     /// (id, line ranges, hunk)
-    entries: Vec<(String, Vec<(usize, usize)>, &'a DiffHunk)>,
+    entries: Vec<Entry<'a>>,
 }
 
 impl Resolved<'_> {
@@ -141,7 +163,7 @@ fn resolve<'a>(ids: &[String], identified: &'a [(String, &'a DiffHunk)]) -> Resu
     if ids.is_empty() {
         anyhow::bail!("no hunk IDs given");
     }
-    let mut entries: Vec<(String, Vec<(usize, usize)>, &DiffHunk)> = Vec::new();
+    let mut entries: Vec<Entry<'_>> = Vec::new();
     for raw in ids {
         let (id, ranges) = parse_id_range(raw)?;
         if let Some(entry) = entries.iter_mut().find(|(eid, _, _)| eid == id) {

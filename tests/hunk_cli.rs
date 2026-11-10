@@ -223,3 +223,34 @@ fn works_inside_a_linked_worktree() {
     );
     assert_eq!(git(p, &["log", "-1", "--format=%s", "main"]).trim(), "init");
 }
+
+#[test]
+fn list_blame_shows_origin_commit_of_each_line() {
+    let dir = repo();
+    let p = dir.path();
+    let init = git(p, &["rev-parse", "--short=7", "HEAD"])
+        .trim()
+        .to_string();
+    // Commit one hunk of f.txt on the current branch, then change g.txt more.
+    git(p, &["checkout", "-q", "--", "g.txt"]);
+    git(p, &["commit", "-qam", "second"]);
+    let second = git(p, &["rev-parse", "--short=7", "HEAD"])
+        .trim()
+        .to_string();
+    std::fs::write(p.join("g.txt"), "a\nc\n").unwrap();
+
+    let out = stdout(&hunk(p, &["list", "--blame", "--file", "g.txt"]));
+    assert!(
+        out.contains(&format!("{init} -")) || out.contains(&format!("{init}  ")),
+        "{out}"
+    );
+    assert!(out.contains("0000000 +c"), "{out}");
+
+    let ids = ids_for(p, "g.txt");
+    assert_eq!(ids.len(), 1);
+    let by_commit = stdout(&hunk(
+        p,
+        &["list", "--blame", "--commit", &second, "--file", "f.txt"],
+    ));
+    assert!(by_commit.contains(&format!("{second} +")), "{by_commit}");
+}
