@@ -118,6 +118,29 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 
 **Granice:** log jest lokalny (każdy user ma swój), nie chroni przed ręcznym `git`, a zapis błędu nigdy nie psuje właściwej komendy.
 
+### 3.11 Jak działa `workmux guard` (opis szczegółowy)
+
+**Co robi:** sprawdza, czy w którymś worktree zmieniono plik z listy chronionych (np. `.env`, klucze). Odpowiada na obawę, że agent z bypass permissions ruszy pliki, których nie wolno.
+
+**Krok po kroku:**
+1. Lista wzorców jest w globalnym configu (`~/.config/workmux/config.yaml`), sekcja `guard.protected_paths`. Tylko globalnie, projekt nie może jej wyłączyć. Przykład:
+   ```yaml
+   guard:
+     protected_paths: [".env*", "secrets/**", "*.pem"]
+   ```
+2. Wzorzec bez `/` pasuje do nazwy pliku na dowolnej głębokości (`.env*` złapie `app/.env.local`). Wzorzec ze `/` pasuje do ścieżki od roota repo (`secrets/**` złapie `secrets/k.pem`, ale nie `x/secrets/k`). Błędny wzorzec jest pomijany bez błędu.
+3. `workmux guard` bierze listę worktree (bez głównego checkoutu) i bazę porównania (domyślny branch, lokalny lub `origin/`).
+4. Dla każdego worktree zbiera zmienione pliki z trzech źródeł: `git diff --name-only baza...HEAD` (commity), `git status --porcelain` (zmiany niezacommitowane i nieśledzone, z obsługą zmiany nazwy).
+5. Lista jest filtrowana wzorcami. Wynik: branch i pliki (lub `--json`: mapa branch → pliki). Kod wyjścia 2, gdy coś znaleziono, 0 gdy czysto.
+6. Gdy lista wzorców jest pusta, komenda tylko o tym informuje.
+
+**Granice:**
+- Tylko wykrywa: nie blokuje merge, nie cofa zmian, nie zapisuje się w audit logu.
+- Sprawdza stan w chwili uruchomienia, nie ciągle; agent może zmienić plik i cofnąć go przed sprawdzeniem.
+- Git uruchamiany przez utwardzony konstruktor workmux (bez hooków repo).
+
+**Następne kroki:** blokada `merge` przy zmianie chronionego pliku, wpis w audit logu, widok w dashboardzie, powiązanie z profilami bezpieczeństwa.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
