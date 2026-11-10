@@ -80,6 +80,8 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
 6. **Snapshot / szybki rollback worktree**, gdy agent coś zepsuje.
 
+5. **Hunki w dashboardzie** 💡: dashboard ma już tryb patch (staging hunk po hunku, split, undo) w `src/command/dashboard/diff_ops.rs`, więc pełny podgląd i staging w TUI byłby duplikatem. Zostaje do decyzji wąski zakres: liczba niezacommitowanych hunków per worktree w liście oraz oznaczenie chronionej gałęzi.
+
 ## 5. Ustalenia techniczne
 
 - Rust 2024, clap, serde, ratatui, `ureq` 3 (nowa zależność), `libc::flock` do blokady odświeżania.
