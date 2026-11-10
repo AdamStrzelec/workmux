@@ -194,7 +194,7 @@ Ograniczenia (uczciwie):
    - ⬜ współdzielenie logu przez katalog team, widok w dashboardzie
 2. **Profile bezpieczeństwa** (`safe`, `review-only`, `trusted`): jednym ustawieniem określają tryb Claude, zakazane ścieżki i politykę git.
    - ✅ `safety_profile` w globalnym configu: ograniczenia komend workmux (patrz 3.13)
-   - ⬜ powiązanie z `guard` (profil włącza/wyłącza `--allow-protected` automatycznie jest już zrobione), tryb Claude per profil, fail-closed przy błędnym configu, wymuszenie poza workmux (protected branch, hooki serwera)
+   - ⬜ tryb Claude per profil, fail-closed przy błędnym configu, wymuszenie poza workmux (protected branch, hooki serwera)
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
