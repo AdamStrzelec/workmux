@@ -24,6 +24,10 @@ pub struct GuardConfig {
     /// prompt to a local agent, so a bad run can be undone.
     #[serde(default)]
     pub snapshot_before_send: bool,
+    /// Keep only this many newest snapshots per branch; older ones are pruned
+    /// after each manual or automatic save. Unset or 0 means never prune.
+    #[serde(default)]
+    pub snapshot_keep: Option<usize>,
 }
 
 const OPTS: MatchOptions = MatchOptions {
@@ -156,6 +160,7 @@ mod tests {
             protected_paths: p.iter().map(|s| s.to_string()).collect(),
             review_command: None,
             snapshot_before_send: false,
+            snapshot_keep: None,
         }
     }
 

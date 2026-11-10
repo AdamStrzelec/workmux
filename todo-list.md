@@ -214,7 +214,9 @@ Uzupełnienie (ostrzeżenie przy `add`): `workmux add <branch>` (bez `--dry-run`
 
 Ograniczenia: przywraca tylko pliki, nie cofa commitów ani nie przesuwa brancha. Nieśledzone pliki utworzone po snapshocie zostają (nic nie jest kasowane, poza plikami śledzonymi, których nie było w snapshocie). Snapshot jest ręczny, bez automatu i bez czyszczenia starych. Git z pominięciem hooków (jak reszta narzędzi).
 
-Uzupełnienie (czyszczenie): `workmux snapshot prune [--keep N]` (domyślnie 20) usuwa refy najstarszych snapshotów bieżącego brancha, zostawiając N najnowszych. Kasuje tylko refy; obiekty zbierze `git gc`. Wpis `snapshot prune` trafia do audit logu. Nie czyści automatycznie: trzeba wywołać ręcznie.
+Uzupełnienie (czyszczenie): `workmux snapshot prune [--keep N]` (domyślnie 20) usuwa refy najstarszych snapshotów bieżącego brancha, zostawiając N najnowszych. Kasuje tylko refy; obiekty zbierze `git gc`. Wpis `snapshot prune` trafia do audit logu. Ręcznie.
+
+Uzupełnienie (auto-czyszczenie): opcja `guard.snapshot_keep: N` w globalnym configu (N > 0) powoduje, że po każdym `snapshot save` oraz po automatycznym snapshocie przed `send` zostaje N najnowszych snapshotów brancha, starsze refy są kasowane. Błąd czyszczenia jest ignorowany (zapis nie zawodzi). Nie obejmuje snapshotu `before-restore` robionego przez `restore`, więc ten może chwilowo przekroczyć limit do następnego zapisu. Bez opcji albo przy 0 nic nie jest kasowane. Czyszczenie nie trafia do audit logu.
 
 ### 3.16 Handoff `workmux handoff` (opis szczegółowy)
 
@@ -319,6 +321,7 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `guard.review_command` | Wpisz w global config `guard: {review_command: "cat >/dev/null; exit 1"}` i `workmux merge` ma odmówić; potem `exit 0` i `--skip-review`. Sprawdź prawdziwą komendę z LLM, duży diff, merge z dashboardu (nie powinien jej uruchamiać) | Sprawdzone tylko testem jednostkowym wywołania komendy; nie e2e |
 | `guard.snapshot_before_send` | Włącz w global config, wyślij `workmux send <agent> \"...\"` do lokalnego agenta; sprawdź `snapshot saved: ...` i `snapshot list`. Zmierz czas na dużym repo | Niesprawdzone z prawdziwym agentem; tylko build i testy |
 | `snapshot prune` | W worktree z kilkoma snapshotami: `workmux snapshot prune --keep 2`, potem `snapshot list`. Sprawdź `snapshot prune` w audit logu | Sprawdzone ręcznie na tymczasowym repo (3 snapshoty, keep 1) |
+| `guard.snapshot_keep` | Ustaw `guard: {snapshot_keep: 2}`, zrób 4× `workmux snapshot save`, potem `snapshot list`: mają zostać 2 | Sprawdzone tylko ręcznie na tymczasowym repo (patrz niżej), nie z prawdziwym agentem |
 | fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |

@@ -7,6 +7,7 @@ use crate::snapshot;
 pub fn save(label: Option<String>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let snap = snapshot::save(&cwd, label.as_deref().unwrap_or(""))?;
+    snapshot::auto_prune(&cwd);
     println!("Saved snapshot {}", snap.id);
     Ok(())
 }

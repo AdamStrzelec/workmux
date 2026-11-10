@@ -33,7 +33,10 @@ fn snapshot_before_send(path: &std::path::Path) {
         return;
     }
     match crate::snapshot::save(path, "before-send") {
-        Ok(s) => eprintln!("snapshot saved: {}", s.id),
+        Ok(s) => {
+            eprintln!("snapshot saved: {}", s.id);
+            crate::snapshot::auto_prune(path);
+        }
         Err(e) => eprintln!("warning: snapshot before send failed: {e:#}"),
     }
 }

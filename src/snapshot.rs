@@ -178,6 +178,15 @@ pub fn prune(path: &Path, keep: usize) -> Result<Vec<String>> {
     Ok(removed)
 }
 
+/// Prune to `guard.snapshot_keep` when configured (and above 0). Best effort:
+/// failures are ignored so a save is never reported as failed because of it.
+pub fn auto_prune(path: &Path) {
+    let keep = crate::config::Config::global_guard_config().snapshot_keep;
+    if let Some(keep) = keep.filter(|k| *k > 0) {
+        let _ = prune(path, keep);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
