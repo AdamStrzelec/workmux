@@ -1049,6 +1049,11 @@ pub struct Config {
     #[serde(default)]
     pub usage: crate::usage::alert::UsageConfig,
 
+    /// Shared team view (`workmux team`). Global config only: the shared
+    /// directory is a machine-level setting.
+    #[serde(default)]
+    pub team: crate::team::TeamConfig,
+
     /// Whether to use nerdfont icons (None = prompt user on first run)
     #[serde(default)]
     pub nerdfont: Option<bool>,
@@ -3194,6 +3199,15 @@ impl Config {
                 Default::default()
             }
         }
+    }
+
+    /// `team` section of the global config; defaults when absent or invalid.
+    pub fn global_team_config() -> crate::team::TeamConfig {
+        Self::load_global()
+            .ok()
+            .flatten()
+            .map(|c| c.team)
+            .unwrap_or_default()
     }
 
     /// `worktree_dir` from the global config file, if set.

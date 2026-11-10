@@ -692,6 +692,17 @@ enum Commands {
         refresh: bool,
     },
 
+    /// Show what everyone sharing the team directory is working on
+    Team {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Only read; do not publish this user's snapshot first
+        #[arg(long)]
+        no_publish: bool,
+    },
+
     /// Wait for agents to reach a target status
     Wait {
         /// Worktree names (supports cross-project with project:handle syntax)
@@ -1381,6 +1392,7 @@ pub fn run() -> Result<()> {
             tmux,
             refresh,
         } => command::usage::run(json, tmux, refresh),
+        Commands::Team { json, no_publish } => command::team::run(json, no_publish),
         Commands::Wait {
             worktrees,
             status,

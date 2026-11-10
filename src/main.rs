@@ -31,6 +31,7 @@ mod shell;
 mod skills;
 mod spinner;
 mod state;
+mod team;
 mod template;
 #[cfg(test)]
 mod test_support;

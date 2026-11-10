@@ -19,7 +19,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 ## 2. Kolejność prac (ustalona)
 
 1. Stan, tokeny i alerty ✅
-2. Współdzielony stan między użytkownikami Linuksa ⬜
+2. Współdzielony stan między użytkownikami Linuksa 🔜 (`workmux team`: snapshoty w katalogu `team.dir`; zostaje publikacja automatyczna, aktywne okno, przełączanie)
 3. Bezpieczeństwo: profile, audit log, git-surgeon, polityki git ⬜
 4. Reszta: consult-llm, claude-history, porty/dev server, task manager ⬜
 
