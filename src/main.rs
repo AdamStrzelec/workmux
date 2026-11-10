@@ -11,6 +11,7 @@ mod command;
 mod config;
 mod config_yaml;
 mod creation_time;
+mod errlog;
 mod frozen_config;
 mod git;
 mod github;
@@ -51,6 +52,8 @@ fn main() -> Result<()> {
     logger::init()?;
     let context = LogContext::current();
     let args = std::env::args().collect::<Vec<_>>();
+    let command_name = errlog::command_name(&args);
+    errlog::install_panic_hook(command_name.clone());
     let deferred_cleanup_worker = args.get(1).is_some_and(|arg| arg == "_deferred-cleanup");
     info!(
         args = ?args,
@@ -71,6 +74,7 @@ fn main() -> Result<()> {
         Err(err) => {
             if !deferred_cleanup_worker {
                 error!(error = ?err, "workmux failed");
+                errlog::record("error", &command_name, &format!("{err:#}"), None, None);
             }
             if let Some(kind) = agent_error::kind_of(&err) {
                 eprintln!("Error: {}: {err:#}", kind.name());

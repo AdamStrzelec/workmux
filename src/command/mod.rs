@@ -7,6 +7,7 @@ pub mod close;
 pub mod config;
 pub mod dashboard;
 pub mod docs;
+pub mod errors;
 pub mod exec;
 pub mod host_exec;
 pub mod hunk;

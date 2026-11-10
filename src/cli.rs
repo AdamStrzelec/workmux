@@ -692,6 +692,17 @@ enum Commands {
         refresh: bool,
     },
 
+    /// Show the local journal of panics and failed commands
+    Errors {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Show only the newest N entries
+        #[arg(long, default_value_t = 20)]
+        last: usize,
+    },
+
     /// Show what everyone sharing the team directory is working on
     Team {
         /// Output as JSON
@@ -1392,6 +1403,7 @@ pub fn run() -> Result<()> {
             tmux,
             refresh,
         } => command::usage::run(json, tmux, refresh),
+        Commands::Errors { json, last } => command::errors::run(json, last),
         Commands::Team { json, no_publish } => command::team::run(json, no_publish),
         Commands::Wait {
             worktrees,
