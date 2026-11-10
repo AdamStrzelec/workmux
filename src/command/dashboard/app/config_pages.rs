@@ -497,6 +497,7 @@ mod tests {
                 key: "d".into(),
                 name: "dev".into(),
                 command: "x".into(),
+                port: None,
             }],
             close_with_session: None,
         });

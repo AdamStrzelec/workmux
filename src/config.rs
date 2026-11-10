@@ -356,6 +356,8 @@ pub enum WorktreeColumn {
     PrTitle,
     PrIssues,
     Mux,
+    /// Listening TCP ports of processes running in the worktree.
+    Ports,
     Age,
     Agent,
 }
@@ -418,7 +420,15 @@ impl DashboardConfig {
     /// a column is never rendered twice, and an empty or absent list falls back
     /// to the default order.
     pub fn worktree_columns(&self) -> Vec<WorktreeColumn> {
-        columns_or_default(self.worktree_columns.as_deref(), &DEFAULT_WORKTREE_COLUMNS)
+        let mut columns =
+            columns_or_default(self.worktree_columns.as_deref(), &DEFAULT_WORKTREE_COLUMNS);
+        // Fork: the default layout also shows listening ports after Mux.
+        if self.worktree_columns.is_none()
+            && let Some(i) = columns.iter().position(|c| *c == WorktreeColumn::Mux)
+        {
+            columns.insert(i + 1, WorktreeColumn::Ports);
+        }
+        columns
     }
 
     /// Whether to show check pass/total counts alongside check icons.
@@ -4674,6 +4684,7 @@ mod tests {
                 WorktreeColumn::Git,
                 WorktreeColumn::Pr,
                 WorktreeColumn::Mux,
+                WorktreeColumn::Ports,
                 WorktreeColumn::Age,
                 WorktreeColumn::Agent
             ]

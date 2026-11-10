@@ -107,7 +107,10 @@ fn usage_header_line(app: &App) -> Option<Line<'static>> {
             format!("{label} "),
             Style::default().fg(app.palette.dimmed),
         ));
-        spans.push(Span::styled(format!("{p}%"), Style::default().fg(color)));
+        spans.push(Span::styled(
+            format!("{} {p}%", crate::usage::format::bar(p, 8)),
+            Style::default().fg(color),
+        ));
     }
     (!spans.is_empty()).then(|| Line::from(spans))
 }

@@ -314,6 +314,28 @@ fn handle_terminal_event(
         return;
     }
 
+    // Error modal: Enter/Esc/o/Space or a click dismisses it; other input is ignored.
+    if app.error_modal.is_some() {
+        let dismiss = match &event {
+            Event::Key(key) => {
+                key.kind == KeyEventKind::Press
+                    && matches!(
+                        key.code,
+                        crossterm::event::KeyCode::Enter
+                            | crossterm::event::KeyCode::Esc
+                            | crossterm::event::KeyCode::Char('o')
+                            | crossterm::event::KeyCode::Char(' ')
+                    )
+            }
+            Event::Mouse(mouse) => matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)),
+            _ => false,
+        };
+        if dismiss {
+            app.error_modal = None;
+        }
+        return;
+    }
+
     // Mouse input is routed against the most recently rendered frame.
     if let Event::Mouse(mouse) = event {
         if handle_mouse_event(app, mouse) {
@@ -790,11 +812,13 @@ fn config_page_key(
             _ => PageKey::Handled,
         };
     }
-    if let Some(buffer) = editor.claude_page.edit.as_mut() {
+    if editor.page == app::ConfigPage::Claude
+        && let Some(buffer) = editor.active_claude_page_mut().edit.as_mut()
+    {
         return match code {
-            KeyCode::Enter => to_msg(editor.claude_page.commit_edit()),
+            KeyCode::Enter => to_msg(editor.active_claude_page_mut().commit_edit()),
             KeyCode::Esc => {
-                editor.claude_page.edit = None;
+                editor.active_claude_page_mut().edit = None;
                 PageKey::Handled
             }
             KeyCode::Backspace => {
@@ -833,7 +857,15 @@ fn config_page_key(
             PageKey::Handled
         }
         app::ConfigPage::Claude => {
-            let page = &mut editor.claude_page;
+            if code == KeyCode::Char('w') {
+                if !editor.toggle_claude_scope() {
+                    return PageKey::Message(
+                        "Select a worktree (not main) before opening C to override it".into(),
+                    );
+                }
+                return PageKey::Handled;
+            }
+            let page = editor.active_claude_page_mut();
             match code {
                 KeyCode::Char('j') | KeyCode::Down => page.move_cursor(true),
                 KeyCode::Char('k') | KeyCode::Up => page.move_cursor(false),

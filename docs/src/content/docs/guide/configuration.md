@@ -327,7 +327,7 @@ claude:
   add_dirs: [../shared]       # --add-dir
   append_system_prompt: "Never push to main."
   extra_args: [--verbose]
-  resume_on_reopen: true      # resume the session saved by dashboard `c` (default true)
+  resume_on_reopen: true      # resume the session saved on close (default true)
 ```
 
 | Preset          | Effect                                                                 |
@@ -341,6 +341,17 @@ claude:
 An explicit `allowed_tools` entry removes the same tool from the preset's deny
 list. The project section replaces the global one as a whole.
 
+**Per-worktree override.** Select a worktree in the dashboard, press `C`, go to
+the Claude page (`Tab`) and press `w`. Fields set there replace the project
+values for that worktree only (unset fields fall back to the project; list
+fields replace, not extend). The override is stored in git config
+(`workmux.worktree.<handle>.claude-config`) and removed with the worktree.
+
+**Session resume.** Closing a worktree (dashboard `c` or `workmux close`) saves
+the Claude session id; the next `workmux open` (or dashboard reopen) resumes it.
+Run tool windows are closed by `c`/`workmux close` (unless
+`tools.close_with_session: false`) and always by `remove`, `merge` and sweep.
+
 ### Run tools
 
 `tools` lists commands the dashboard starts with `x` in their own window per
@@ -351,6 +362,17 @@ tools:
   - { key: d, name: dev, command: npm run dev }
   - { key: t, name: test, command: npm test -- --watch }
 ```
+
+Give a tool a `port` to get a warning (red modal) when that port is already
+taken as you start it; the tool still starts:
+
+```yaml
+tools:
+  - { key: d, name: dev, command: npm run dev, port: 3000 }
+```
+
+The dashboard shows listening ports per worktree (`ports` column, preview and
+`x` menu); `workmux ports` lists them for all projects.
 
 To keep tool windows open when closing the worktree window with `c`, use the
 map form:

@@ -73,6 +73,24 @@ impl App {
         });
     }
 
+    /// Spawn a background thread to rescan listening ports.
+    pub(super) fn spawn_ports_fetch(&self) {
+        if self
+            .is_ports_fetching
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        let tx = self.event_tx.clone();
+        let flag = self.is_ports_fetching.clone();
+        std::thread::spawn(move || {
+            let listeners = crate::ports::scan();
+            flag.store(false, Ordering::SeqCst);
+            let _ = tx.send(AppEvent::Ports(listeners));
+        });
+    }
+
     /// Spawn a background thread to refresh the Claude usage snapshot.
     pub(super) fn spawn_usage_fetch(&self) {
         if self

@@ -219,6 +219,18 @@ pub struct SessionConfigEditor {
     pub page: super::ConfigPage,
     pub tools_page: super::ToolsPage,
     pub claude_page: super::ClaudePage,
+    /// Claude override of the worktree selected when the editor opened.
+    pub claude_worktree: Option<WorktreeClaude>,
+    /// Claude page edits the worktree override instead of the project.
+    pub claude_scope_worktree: bool,
+}
+
+/// Per-worktree Claude override being edited.
+#[derive(Debug, Clone)]
+pub struct WorktreeClaude {
+    pub handle: String,
+    pub path: PathBuf,
+    pub page: super::ClaudePage,
 }
 
 /// Locate an existing project config, or the default path to create.
@@ -436,7 +448,11 @@ fn exclude_if_untracked(repo_root: &Path, config_path: &Path) -> Result<()> {
 }
 
 impl SessionConfigEditor {
-    pub fn load(project_name: String, repo_root: PathBuf) -> Result<Self> {
+    pub fn load(
+        project_name: String,
+        repo_root: PathBuf,
+        worktree: Option<(String, PathBuf)>,
+    ) -> Result<Self> {
         let config_path = config_path_for(&repo_root);
         let doc = if config_path.exists() {
             let text = std::fs::read_to_string(&config_path)
@@ -473,7 +489,70 @@ impl SessionConfigEditor {
             page: super::ConfigPage::Layout,
             tools_page: super::ToolsPage::new(tools),
             claude_page: super::ClaudePage::new(claude),
+            claude_worktree: worktree.map(|(handle, path)| {
+                let over = crate::claude_launch::worktree_override(&handle, Some(&path));
+                WorktreeClaude {
+                    page: super::ClaudePage::new(over.unwrap_or_default()),
+                    handle,
+                    path,
+                }
+            }),
+            claude_scope_worktree: false,
         })
+    }
+
+    /// Claude page currently shown (project or worktree override).
+    pub fn active_claude_page(&self) -> &super::ClaudePage {
+        match &self.claude_worktree {
+            Some(wt) if self.claude_scope_worktree => &wt.page,
+            _ => &self.claude_page,
+        }
+    }
+
+    pub fn active_claude_page_mut(&mut self) -> &mut super::ClaudePage {
+        match &mut self.claude_worktree {
+            Some(wt) if self.claude_scope_worktree => &mut wt.page,
+            _ => &mut self.claude_page,
+        }
+    }
+
+    /// Switch the Claude page between project and worktree override.
+    /// Returns false when no worktree was selected.
+    pub fn toggle_claude_scope(&mut self) -> bool {
+        if self.claude_worktree.is_none() {
+            return false;
+        }
+        self.claude_scope_worktree = !self.claude_scope_worktree;
+        true
+    }
+
+    /// Effective claude CLI arguments for the shown scope, shell quoted.
+    pub fn claude_args_preview(&self) -> String {
+        match &self.claude_worktree {
+            Some(wt) if self.claude_scope_worktree => crate::claude_launch::shell_join(
+                &self
+                    .claude_page
+                    .config
+                    .overlay(&wt.page.config)
+                    .build_args(),
+            ),
+            _ => self.claude_page.args_preview(),
+        }
+    }
+
+    fn worktree_claude_dirty(&self) -> bool {
+        self.claude_worktree
+            .as_ref()
+            .is_some_and(|wt| wt.page.dirty)
+    }
+
+    /// Changes written to the YAML file.
+    fn yaml_changes(&self) -> bool {
+        self.dirty
+            || self.worktree_dir.needs_write()
+            || self.tools_page.dirty
+            || self.claude_page.dirty
+            || !self.worktree_claude_dirty()
     }
 
     /// Whether save rewrites the tab layout. Untouched tabs are written only
@@ -484,7 +563,10 @@ impl SessionConfigEditor {
 
     /// Changes besides the tab layout (worktree dir, tools, Claude settings).
     pub fn has_other_changes(&self) -> bool {
-        self.worktree_dir.needs_write() || self.tools_page.dirty || self.claude_page.dirty
+        self.worktree_dir.needs_write()
+            || self.tools_page.dirty
+            || self.claude_page.dirty
+            || self.worktree_claude_dirty()
     }
 
     /// Any unsaved change.
@@ -493,6 +575,16 @@ impl SessionConfigEditor {
     }
 
     pub fn save(&self) -> Result<()> {
+        if let Some(wt) = self.claude_worktree.as_ref().filter(|wt| wt.page.dirty) {
+            crate::claude_launch::save_worktree_override(
+                &wt.handle,
+                Some(&wt.path),
+                &wt.page.config,
+            )?;
+        }
+        if !self.yaml_changes() {
+            return Ok(());
+        }
         let mut updated = if self.config_path.exists() {
             std::fs::read_to_string(&self.config_path)?
         } else {
@@ -644,7 +736,13 @@ impl App {
         };
         let repo_root = main.path.clone();
         let project_name = super::super::agent::extract_project_name(&repo_root);
-        match SessionConfigEditor::load(project_name, repo_root) {
+        let selected = self
+            .worktree_table_state
+            .selected()
+            .and_then(|i| self.worktrees.get(i))
+            .filter(|w| !w.is_main)
+            .map(|w| (w.handle.clone(), w.path.clone()));
+        match SessionConfigEditor::load(project_name, repo_root, selected) {
             Ok(editor) => self.pending_session_config = Some(editor),
             Err(e) => {
                 self.status_message = Some((
@@ -673,6 +771,9 @@ impl App {
                 }
                 if editor.claude_page.dirty {
                     parts.push("claude settings".to_string());
+                }
+                if let Some(wt) = editor.claude_worktree.as_ref().filter(|wt| wt.page.dirty) {
+                    parts.push(format!("claude override for '{}'", wt.handle));
                 }
                 if editor.writes_tabs() {
                     parts.push(format!("{} tabs", editor.tabs.len()));
@@ -852,6 +953,8 @@ mod tests {
             page: crate::command::dashboard::app::ConfigPage::Layout,
             tools_page: Default::default(),
             claude_page: Default::default(),
+            claude_worktree: None,
+            claude_scope_worktree: false,
         }
     }
 

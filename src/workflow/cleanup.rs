@@ -495,6 +495,14 @@ fn cleanup_impl(
         || !git::get_worktree_attachment_in(handle, Some(&context.execution_dir)).manages_mux()
     {
         info!(branch = branch_name, handle, path = %worktree_path.display(), "cleanup:headless");
+        if context.mux.is_running().unwrap_or(false) {
+            // Run tool windows (`x` menu) can exist without a worktree window.
+            crate::worktree_extras::kill_tool_windows(
+                context.mux.as_ref(),
+                &context.prefix,
+                handle,
+            );
+        }
         context.chdir_to_main_worktree()?;
         if worktree_path.exists() && !no_hooks {
             run_pre_remove_hooks(
@@ -563,6 +571,10 @@ fn cleanup_impl(
     context.chdir_to_main_worktree()?;
 
     let mux_running = context.mux.is_running().unwrap_or(false);
+    if mux_running {
+        // Run tool windows (`x` menu) belong to the worktree: always close them.
+        crate::worktree_extras::kill_tool_windows(context.mux.as_ref(), &context.prefix, handle);
+    }
 
     // Check if we're running inside ANY matching target (original or duplicate)
     let current_matching_target = if mux_running {

@@ -660,6 +660,17 @@ enum Commands {
         git: bool,
     },
 
+    /// Show listening TCP ports with their process, worktree and tool window
+    Ports {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Show every listener, not only those inside git worktrees or tmux
+        #[arg(long)]
+        all: bool,
+    },
+
     /// Show Claude plan usage limits (5h session and weekly windows)
     Usage {
         /// Output as JSON
@@ -745,9 +756,14 @@ enum Commands {
         #[arg(short = 'w', long = "worktree-dir", value_name = "DIR")]
         worktree_dir: Option<String>,
         /// Regenerate .workmux.yaml even if it exists (old file is backed up
-        /// to .workmux.yaml.bak).
+        /// to .workmux.yaml.bak). With --global: rewrite the global config.
         #[arg(long)]
         force: bool,
+        /// Write the default global config (~/.config/workmux/config.yaml):
+        /// creates it, or adds missing defaults (mode: session,
+        /// split_panes: false, nerdfont) to an existing one.
+        #[arg(long, conflicts_with = "worktree_dir")]
+        global: bool,
     },
 
     /// Set up agent status tracking hooks and install skills
@@ -1352,6 +1368,7 @@ pub fn run() -> Result<()> {
             all,
             git,
         } => command::status::run(&worktrees, json, all, git),
+        Commands::Ports { json, all } => command::ports::run(json, all),
         Commands::Usage {
             json,
             tmux,
@@ -1379,8 +1396,14 @@ pub fn run() -> Result<()> {
         Commands::Exec { run_dir } => command::exec::run(&run_dir),
         Commands::SyncFiles { all } => command::sync_files::run(all),
         Commands::Init {
+            global: true,
+            force,
+            ..
+        } => crate::global_init::run(force),
+        Commands::Init {
             worktree_dir,
             force,
+            ..
         } => crate::config::Config::init(worktree_dir.as_deref(), force),
         Commands::Setup { hooks, skills } => command::setup::run(hooks, skills),
         Commands::Uninstall { dry_run } => command::uninstall::run(dry_run),

@@ -189,6 +189,12 @@ pub fn run(name: Option<&str>) -> Result<()> {
     // Stop any running containers for this worktree before killing the target.
     sandbox::stop_containers_for_handle(&resolved_handle);
 
+    // Remember the Claude session for the next `open`, and close run tools.
+    crate::worktree_extras::save_claude_session(&resolved_handle, &worktree_path, None);
+    if crate::worktree_extras::close_tools_with_session(&worktree_path) {
+        crate::worktree_extras::kill_tool_windows(mux.as_ref(), prefix, &resolved_handle);
+    }
+
     if is_current_target {
         let delay = std::time::Duration::from_millis(100);
         if mode == crate::config::MuxMode::Window {

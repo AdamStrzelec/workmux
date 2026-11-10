@@ -19,6 +19,48 @@
 
 ---
 
+## Fork setup (AdamStrzelec/workmux, branch `adam`)
+
+Install on a new machine / user:
+
+```bash
+git clone -b adam git@github.com:AdamStrzelec/workmux.git && cd workmux && git remote add upstream git@github.com:raine/workmux.git && cargo install --path .
+```
+
+Install fork guard git hooks (block commits on `main`, pushes to upstream, non-mirror `main` pushes):
+
+```bash
+scripts/install-fork-hooks
+```
+
+Update an existing install (after changes were pushed to `adam`):
+
+```bash
+cd workmux && git pull && cargo install --path .
+```
+
+Pull author's changes (raine/workmux) into the fork, then into `adam`:
+
+```bash
+git switch main && git fetch upstream && git merge --ff-only upstream/main && git push origin main && git switch adam && git merge main && cargo build && cargo test && cargo install --path . && git push origin adam
+```
+
+On merge conflicts: fix files, for `Cargo.lock` take upstream's (`git checkout --theirs Cargo.lock`, cargo re-adds own deps on build), then `git add -A && git commit --no-edit` and continue with build/test/push.
+
+Default global config, `~/.config/workmux/config.yaml` (create it with `workmux init --global`, or by hand):
+
+```yaml
+nerdfont: true
+theme: night-sorbet
+# Each worktree gets its own tmux session.
+mode: session
+# Every pane (agent, shell, commands) opens in its own tab, no splits.
+split_panes: false
+# Projects shown in the dashboard project picker (`P`), machine specific.
+projects:
+  - ~/repozytoria/some-project
+```
+
 Giga opinionated zero-friction workflow tool for managing
 [git worktrees](https://git-scm.com/docs/git-worktree) and tmux windows as
 isolated development environments. Perfect for running multiple AI agents in

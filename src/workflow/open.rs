@@ -65,7 +65,20 @@ pub fn open(
     // Resolve mode using canonical base_handle (not the CLI-provided name which may be a branch).
     // Precedence: CLI override > stored git metadata > config default (from options.mode)
     let stored_mode = git::get_worktree_mode_opt_in(&base_handle, Some(&context.execution_dir));
-    let mode = mode_override.or(stored_mode).unwrap_or(options.mode);
+    // A `windows` layout only works in session mode; a stale stored window
+    // mode (worktree created before the config switched) must not block it.
+    let stored_for_resolve = match stored_mode {
+        Some(MuxMode::Window) if context.config.windows.is_some() => None,
+        other => other,
+    };
+    let mode =
+        mode_override
+            .or(stored_for_resolve)
+            .unwrap_or(if context.config.windows.is_some() {
+                MuxMode::Session
+            } else {
+                options.mode
+            });
     if mode == MuxMode::Session && options.window_session_name.is_some() {
         anyhow::bail!("--parent-session requires window mode");
     }
@@ -415,11 +428,14 @@ pub fn open(
             Some(&context.execution_dir),
         );
         if saved.is_some() {
+            let over = crate::claude_launch::worktree_override(&base_handle, Some(&worktree_path));
             let enabled = context
                 .config
                 .claude
-                .as_ref()
-                .is_none_or(|c| c.resume_on_reopen());
+                .clone()
+                .unwrap_or_default()
+                .overlay(&over.unwrap_or_default())
+                .resume_on_reopen();
             let session_dir = if context.config_rel_dir.as_os_str().is_empty() {
                 worktree_path.clone()
             } else {
