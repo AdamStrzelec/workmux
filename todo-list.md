@@ -95,3 +95,21 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 - Dokumentacja i CHANGELOG dla sekcji `usage`.
 - Weryfikacja powiadomień tmux przez realne SSH.
 - Opcjonalnie: zmiana etykiety powiadomień macOS z „Terminal” tylko dla alertów.
+
+## 7. Do przetestowania przez nas (nie sprawdzone przez Claude)
+
+Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środowisku, ląduje tutaj.
+
+| Obszar | Co sprawdzić | Dlaczego nie było testowane |
+|--------|--------------|-----------------------------|
+| `hunk fold` / `move` / `split` | Konflikt w trakcie rebase: czy repo zostaje w czytelnym stanie i czy instrukcja jest zrozumiała | Żaden test nie wywołuje prawdziwego konfliktu |
+| `hunk split` | Commit z nowym plikiem (trafia do commita „reszta”, nie da się go wybrać przez `--pick`) | Brak hunka dla nowego pliku, zachowanie tylko opisane |
+| `hunk` (całość) | Praca w `dev-forge` z prawdziwym agentem | Testy tylko na tymczasowych repo |
+| Zainstalowana binarka | `cargo install --path .` i test nowych komend w `dev-forge` | Binarka w `~/.cargo/bin` jest starsza niż commity |
+| `workmux team` | Dwóch prawdziwych użytkowników Linuksa, wspólna grupa, katalog `chmod 2775`, odczyt i zapis plików | Test tylko na jednym użytkowniku i sztucznym pliku |
+| `workmux team` | Prywatność: tytuły paneli i wszystkie projekty są widoczne dla wspólników | Decyzja o filtrze jeszcze nie podjęta |
+| Alerty użycia | Komunikaty tmux przez prawdziwe SSH na innego hosta/usera | Brak drugiego hosta |
+| Alerty użycia | Etykieta powiadomień macOS („Terminal”) | Tylko opcjonalna poprawka |
+| `workmux usage` | Odczyt tokena na Linuksie (`~/.claude/.credentials.json`, `CLAUDE_CONFIG_DIR`) | Sprawdzone tylko na macOS (Keychain) |
+| Tryb bypass permissions | Wykrywanie i nadzór nad nietechnicznymi użytkownikami | Funkcja jeszcze nie zbudowana |
+
