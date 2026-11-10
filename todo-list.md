@@ -210,6 +210,8 @@ Ograniczenia (uczciwie):
 
 Ograniczenia: przywraca tylko pliki, nie cofa commitów ani nie przesuwa brancha. Nieśledzone pliki utworzone po snapshocie zostają (nic nie jest kasowane, poza plikami śledzonymi, których nie było w snapshocie). Snapshot jest ręczny, bez automatu i bez czyszczenia starych. Git z pominięciem hooków (jak reszta narzędzi).
 
+Uzupełnienie (czyszczenie): `workmux snapshot prune [--keep N]` (domyślnie 20) usuwa refy najstarszych snapshotów bieżącego brancha, zostawiając N najnowszych. Kasuje tylko refy; obiekty zbierze `git gc`. Wpis `snapshot prune` trafia do audit logu. Nie czyści automatycznie: trzeba wywołać ręcznie.
+
 ### 3.16 Handoff `workmux handoff` (opis szczegółowy)
 
 1. W worktree `workmux handoff` drukuje notatkę markdown dla osoby lub agenta przejmującego pracę.
@@ -258,7 +260,8 @@ Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, pr
 6. **Snapshot / szybki rollback worktree**, gdy agent coś zepsuje.
    - ✅ `workmux snapshot save [etykieta] | list [--json] | restore <id>` (patrz 3.15)
    - ✅ automatyczny snapshot przed `workmux send` (opcja `guard.snapshot_before_send`, patrz 3.18)
-   - ⬜ snapshot przed `run`, czyszczenie starych snapshotów, snapshot commitów (reset brancha)
+   - ✅ `workmux snapshot prune [--keep N]` (patrz 3.15)
+   - ⬜ snapshot przed `run`, automatyczne czyszczenie, snapshot commitów (reset brancha)
 
 5. **Hunki w dashboardzie** ❌ odpuszczone (decyzja użytkownika, niepotrzebne w UI): dashboard ma już tryb patch (staging hunk po hunku, split, undo) w `src/command/dashboard/diff_ops.rs`, więc pełny podgląd i staging w TUI byłby duplikatem. Zostaje do decyzji wąski zakres: liczba niezacommitowanych hunków per worktree w liście oraz oznaczenie chronionej gałęzi.
 
@@ -309,5 +312,6 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |
 | `guard.review_command` | Wpisz w global config `guard: {review_command: "cat >/dev/null; exit 1"}` i `workmux merge` ma odmówić; potem `exit 0` i `--skip-review`. Sprawdź prawdziwą komendę z LLM, duży diff, merge z dashboardu (nie powinien jej uruchamiać) | Sprawdzone tylko testem jednostkowym wywołania komendy; nie e2e |
 | `guard.snapshot_before_send` | Włącz w global config, wyślij `workmux send <agent> \"...\"` do lokalnego agenta; sprawdź `snapshot saved: ...` i `snapshot list`. Zmierz czas na dużym repo | Niesprawdzone z prawdziwym agentem; tylko build i testy |
+| `snapshot prune` | W worktree z kilkoma snapshotami: `workmux snapshot prune --keep 2`, potem `snapshot list`. Sprawdź `snapshot prune` w audit logu | Sprawdzone ręcznie na tymczasowym repo (3 snapshoty, keep 1) |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |

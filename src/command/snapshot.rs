@@ -35,3 +35,10 @@ pub fn restore(id: &str) -> Result<()> {
     );
     Ok(())
 }
+
+pub fn prune(keep: usize) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let removed = snapshot::prune(&cwd, keep)?;
+    println!("Removed {} snapshot(s), kept up to {keep}.", removed.len());
+    Ok(())
+}

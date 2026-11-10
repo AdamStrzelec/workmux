@@ -1457,6 +1457,7 @@ pub fn run() -> Result<()> {
         Commands::Snapshot { command } => match command {
             SnapshotCommands::Save { label } => command::snapshot::save(label),
             SnapshotCommands::List { json } => command::snapshot::list(json),
+            SnapshotCommands::Prune { keep } => command::snapshot::prune(keep),
             SnapshotCommands::Restore { id } => command::snapshot::restore(&id),
         },
         Commands::Guard { json } => command::guard::run(json),
@@ -2369,6 +2370,12 @@ pub enum SnapshotCommands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+    },
+    /// Delete old snapshots of the current branch, keeping the newest N
+    Prune {
+        /// How many of the newest snapshots to keep
+        #[arg(long, default_value_t = 20)]
+        keep: usize,
     },
     /// Restore the working tree to a snapshot (current state is saved first)
     Restore {

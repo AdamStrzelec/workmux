@@ -156,6 +156,28 @@ pub fn restore(path: &Path, id: &str) -> Result<Snapshot> {
     Ok(before)
 }
 
+/// Snapshots to delete when keeping the newest `keep` (input newest first).
+fn to_prune(snaps: &[Snapshot], keep: usize) -> &[Snapshot] {
+    snaps.get(keep..).unwrap_or(&[])
+}
+
+/// Delete all but the newest `keep` snapshots of the current branch.
+/// Returns the removed ids. Only the refs go; objects are left to git gc.
+pub fn prune(path: &Path, keep: usize) -> Result<Vec<String>> {
+    let snaps = list(path)?;
+    let prefix = branch_prefix(path)?;
+    let mut removed = Vec::new();
+    for s in to_prune(&snaps, keep) {
+        git_ok(
+            path,
+            &["update-ref", "-d", &format!("{prefix}/{}", s.id)],
+            &[],
+        )?;
+        removed.push(s.id.clone());
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +197,20 @@ mod tests {
         let s = parse_ref("refs/workmux/snapshots/main/1700000000").unwrap();
         assert_eq!(s.label, "");
         assert!(parse_ref("refs/workmux/snapshots/main/abc").is_none());
+    }
+
+    #[test]
+    fn prune_keeps_newest() {
+        let mk = |ts: u64| Snapshot {
+            id: ts.to_string(),
+            ts,
+            label: String::new(),
+        };
+        let snaps = vec![mk(3), mk(2), mk(1)];
+        let ids: Vec<_> = to_prune(&snaps, 1).iter().map(|s| s.ts).collect();
+        assert_eq!(ids, vec![2, 1]);
+        assert!(to_prune(&snaps, 3).is_empty());
+        assert!(to_prune(&snaps, 10).is_empty());
+        assert_eq!(to_prune(&snaps, 0).len(), 3);
     }
 }

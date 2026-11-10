@@ -41,7 +41,7 @@ pub fn action_label(args: &[String]) -> Option<String> {
         }
         "snapshot" => {
             let sub = positional.next()?.as_str();
-            (sub == "restore").then(|| "snapshot restore".to_string())
+            matches!(sub, "restore" | "prune").then(|| format!("snapshot {sub}"))
         }
         _ => None,
     }
