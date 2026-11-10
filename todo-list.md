@@ -9,7 +9,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 | # | Narzędzie | Repo | Status | Plan |
 |---|-----------|------|--------|------|
 | 1 | tmux-agent-usage | raine/tmux-agent-usage | ✅ (Claude, globalnie) | `workmux usage`, nagłówek dashboardu, alerty. Zostały paski postępu |
-| 2 | git-surgeon | raine/git-surgeon | ✅ część 1 | `workmux hunk` (list, show, stage, unstage, discard, commit, commit-to) gotowe, z blokadą commitów na `main`/`master`/gałąź domyślną. `list --blame` gotowe. Zostało: przepisywanie historii (`split`, `fold`, `amend`, `squash`, `reword`, `move`, `undo`). Poza zakresem: `update`, `install-skill` |
+| 2 | git-surgeon | raine/git-surgeon | ✅ część 1 | `workmux hunk` (list, show, stage, unstage, discard, commit, commit-to) gotowe, z blokadą commitów na `main`/`master`/gałąź domyślną. `list --blame` gotowe. `undo`, `amend`, `reword` gotowe (z blokadą na chronionych gałęziach i na wypchniętych commitach). Zostało: `split`, `fold`, `squash`, `move`. Poza zakresem: `update`, `install-skill` |
 | 3 | claude-history | raine/claude-history | ⬜ | Przeszukiwanie historii rozmów Claude, powiązanie z worktree/sesją, handoff |
 | 4 | consult-llm | raine/consult-llm | ⬜ | Drugi model do review; baza dla pre-merge gate (`/review-panel`) |
 | 5 | tmux-tools | raine/tmux-tools | ⬜ | Do przejrzenia, co z tego ma sens w workmux |

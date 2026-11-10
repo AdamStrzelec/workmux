@@ -254,3 +254,169 @@ fn list_blame_shows_origin_commit_of_each_line() {
     ));
     assert!(by_commit.contains(&format!("{second} +")), "{by_commit}");
 }
+
+/// Repo on branch `work` with three commits: one.txt, two.txt, three.txt.
+fn history_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.email", "t@example.com"]);
+    git(p, &["config", "user.name", "t"]);
+    git(p, &["config", "commit.gpgsign", "false"]);
+    std::fs::write(p.join("base.txt"), "base\n").unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-qm", "base"]);
+    git(p, &["checkout", "-q", "-b", "work"]);
+    for name in ["one", "two", "three"] {
+        std::fs::write(p.join(format!("{name}.txt")), format!("{name}\n")).unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", name]);
+    }
+    dir
+}
+
+fn subjects(p: &std::path::Path) -> Vec<String> {
+    git(p, &["log", "--format=%s", "main..HEAD"])
+        .lines()
+        .map(String::from)
+        .collect()
+}
+
+#[test]
+fn amend_head_folds_staged_hunks() {
+    let dir = history_repo();
+    let p = dir.path();
+    std::fs::write(p.join("three.txt"), "three\nmore\n").unwrap();
+    let ids = ids_for(p, "three.txt");
+    assert!(hunk(p, &["stage", &ids[0]]).status.success());
+    let out = hunk(p, &["amend", "HEAD"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(subjects(p), ["three", "two", "one"]);
+    assert_eq!(git(p, &["show", "HEAD:three.txt"]), "three\nmore\n");
+}
+
+#[test]
+fn amend_older_commit_rewrites_it_and_keeps_later_ones() {
+    let dir = history_repo();
+    let p = dir.path();
+    let target = git(p, &["rev-parse", "HEAD~2"]).trim().to_string();
+    std::fs::write(p.join("one.txt"), "one\nfixed\n").unwrap();
+    std::fs::write(p.join("three.txt"), "three\nwip\n").unwrap();
+    let ids = ids_for(p, "one.txt");
+    assert!(hunk(p, &["stage", &ids[0]]).status.success());
+    let out = hunk(p, &["amend", &target]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(subjects(p), ["three", "two", "one"]);
+    assert_eq!(git(p, &["show", "HEAD~2:one.txt"]), "one\nfixed\n");
+    assert_eq!(git(p, &["show", "HEAD:three.txt"]), "three\n");
+    // Unstaged work survives the rebase.
+    assert_eq!(
+        std::fs::read_to_string(p.join("three.txt")).unwrap(),
+        "three\nwip\n"
+    );
+    assert!(git(p, &["diff", "--cached"]).is_empty());
+}
+
+#[test]
+fn amend_without_staged_changes_fails() {
+    let dir = history_repo();
+    let out = hunk(dir.path(), &["amend", "HEAD"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no staged changes"));
+}
+
+#[test]
+fn reword_older_commit_changes_only_the_message() {
+    let dir = history_repo();
+    let p = dir.path();
+    let tree_before = git(p, &["rev-parse", "HEAD^{tree}"]);
+    let target = git(p, &["rev-parse", "HEAD~1"]).trim().to_string();
+    let out = hunk(p, &["reword", &target, "-m", "second", "-m", "body text"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(subjects(p), ["three", "second", "one"]);
+    assert_eq!(
+        git(p, &["log", "-1", "--format=%b", "HEAD~1"]).trim(),
+        "body text"
+    );
+    assert_eq!(git(p, &["rev-parse", "HEAD^{tree}"]), tree_before);
+}
+
+#[test]
+fn reword_head() {
+    let dir = history_repo();
+    let p = dir.path();
+    let out = hunk(p, &["reword", "HEAD", "-m", "third"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(subjects(p), ["third", "two", "one"]);
+}
+
+#[test]
+fn history_rewrites_refuse_protected_branch() {
+    let dir = history_repo();
+    let p = dir.path();
+    git(p, &["checkout", "-q", "main"]);
+    let out = hunk(p, &["reword", "HEAD", "-m", "x"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("protected branch"));
+    assert_eq!(git(p, &["log", "-1", "--format=%s"]).trim(), "base");
+}
+
+#[test]
+fn history_rewrites_refuse_pushed_commits_unless_allowed() {
+    let dir = history_repo();
+    let p = dir.path();
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        p,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    git(p, &["push", "-q", "origin", "work"]);
+    let out = hunk(p, &["reword", "HEAD", "-m", "x"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--allow-pushed"));
+    let out = hunk(p, &["reword", "HEAD", "-m", "x", "--allow-pushed"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(git(p, &["log", "-1", "--format=%s"]).trim(), "x");
+}
+
+#[test]
+fn undo_reverse_applies_a_hunk_of_an_earlier_commit() {
+    let dir = history_repo();
+    let p = dir.path();
+    std::fs::write(p.join("two.txt"), "two\nextra\n").unwrap();
+    git(p, &["commit", "-qam", "extra"]);
+    git(p, &["commit", "-q", "--allow-empty", "-m", "noise"]);
+    let listing = stdout(&hunk(p, &["list", "--commit", "HEAD~1"]));
+    let id = listing.split_whitespace().next().unwrap().to_string();
+    let out = hunk(p, &["undo", &id, "--from", "HEAD~1"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(std::fs::read_to_string(p.join("two.txt")).unwrap(), "two\n");
+    assert!(git(p, &["diff", "--cached"]).is_empty());
+    let bad = hunk(p, &["undo", "deadbee", "--from", "HEAD~1"]);
+    assert!(!bad.status.success());
+}

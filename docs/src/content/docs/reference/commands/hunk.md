@@ -22,6 +22,9 @@ workmux hunk unstage ID... [--lines START-END]
 workmux hunk discard ID... [--lines START-END]
 workmux hunk commit -m MESSAGE ID...
 workmux hunk commit-to BRANCH -m MESSAGE ID...
+workmux hunk undo ID... --from REV [--lines START-END]
+workmux hunk amend REV [--allow-pushed]
+workmux hunk reword REV -m SUBJECT [-m BODY]... [--allow-pushed]
 ```
 
 ## Blame
@@ -44,6 +47,30 @@ bf4940f f (+1 -1)
   an unstaged diff when the file also has staged changes, because the old side
   is then the index and not `HEAD`.
 - `--blame` takes precedence over `--full`.
+
+## Undo, amend and reword
+
+`undo` reverse-applies hunks of an earlier commit to the working tree, so you
+can revert part of a commit without reverting all of it. Find IDs with
+`list --commit REV`. The changes appear as unstaged modifications; it fails if
+the surrounding lines have changed since.
+
+`amend REV` folds the currently staged changes into an earlier commit (or HEAD).
+`reword REV -m ...` changes a commit message without touching its content;
+repeat `-m` for body paragraphs. Older commits are rewritten with a
+non-interactive autosquash rebase, and unstaged changes are kept.
+
+Safety checks, since these rewrite history and run without hooks:
+
+- refused on `main`, `master` and the default branch, and on a detached HEAD;
+- refused when the commit is not an ancestor of HEAD or merge commits lie
+  between it and HEAD (the rebase would flatten them);
+- refused when the commit is already on a remote branch, unless
+  `--allow-pushed` (a force push is then needed);
+- `reword` needs an empty index, `amend` needs staged changes.
+
+On a rebase conflict the repository stays in the rebase state; resolve it and
+run `git rebase --continue`, or `git rebase --abort`.
 
 ## Partial hunks
 

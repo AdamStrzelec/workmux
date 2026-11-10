@@ -2182,6 +2182,35 @@ pub enum HunkCommand {
         message: String,
         ids: Vec<String>,
     },
+    /// Reverse-apply hunks of an earlier commit onto the working tree
+    Undo {
+        ids: Vec<String>,
+        /// Commit the hunks come from (see 'hunk list --commit')
+        #[arg(long)]
+        from: String,
+        /// Hunk-relative line range (e.g. 5-30), single hunk only
+        #[arg(long, value_parser = crate::hunk::parse_line_range)]
+        lines: Option<(usize, usize)>,
+    },
+    /// Fold the staged changes into an earlier commit
+    Amend {
+        /// Commit to amend (HEAD, a SHA, HEAD~2, ...)
+        commit: String,
+        /// Allow rewriting a commit that is already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Change the message of an earlier commit
+    Reword {
+        /// Commit to reword (HEAD, a SHA, HEAD~2, ...)
+        commit: String,
+        /// New message; repeat for subject and body paragraphs
+        #[arg(short, long, required = true)]
+        message: Vec<String>,
+        /// Allow rewriting a commit that is already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
     /// Commit hunks to another branch without checking it out
     CommitTo {
         /// Target branch

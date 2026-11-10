@@ -206,6 +206,27 @@ fn apply(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)>) -> Resu
     Ok(())
 }
 
+/// Reverse-apply hunks of an earlier commit onto the working tree.
+pub fn undo(ids: &[String], from: &str, lines: Option<(usize, usize)>) -> Result<()> {
+    if lines.is_some() && ids.len() != 1 {
+        anyhow::bail!("--lines requires exactly one hunk ID");
+    }
+    if let Some(id) = ids.iter().find(|id| id.contains(':')) {
+        anyhow::bail!("inline ranges are not supported here: {id}; use --lines START-END");
+    }
+    let hunks = parse_diff(&git_diff_commit(from, None)?);
+    let identified = assign_ids(&hunks);
+    let mut resolved =
+        resolve(ids, &identified).map_err(|e| anyhow::anyhow!("{e} in commit {from}"))?;
+    if let Some(range) = lines {
+        resolved.entries[0].1 = vec![range];
+    }
+    apply_patch(&resolved.patch(true)?, ApplyMode::Discard)
+        .context("patch no longer applies cleanly to the working tree")?;
+    confirm(resolved.ids());
+    Ok(())
+}
+
 pub fn stage(ids: &[String], lines: Option<(usize, usize)>) -> Result<()> {
     apply(ids, ApplyMode::Stage, lines)
 }
@@ -218,7 +239,7 @@ pub fn discard(ids: &[String], lines: Option<(usize, usize)>) -> Result<()> {
     apply(ids, ApplyMode::Discard, lines)
 }
 
-fn require_clean_index() -> Result<()> {
+pub(super) fn require_clean_index() -> Result<()> {
     let status = git_cmd()?
         .args(["diff", "--cached", "--quiet"])
         .status()
@@ -231,7 +252,7 @@ fn require_clean_index() -> Result<()> {
 
 /// Branches that hunk commits must never target: `main`, `master` and the repo's default branch.
 /// `hunk` runs git without hooks, so the check lives here instead of in a pre-commit hook.
-fn is_protected(branch: &str) -> bool {
+pub(super) fn is_protected(branch: &str) -> bool {
     if matches!(branch, "main" | "master") {
         return true;
     }
