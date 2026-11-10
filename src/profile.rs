@@ -18,6 +18,28 @@ pub enum Profile {
     ReviewOnly,
 }
 
+/// Profile to enforce given the result of loading the global config. An
+/// unreadable or invalid config fails closed to `review-only`; the note says why.
+pub fn resolve(loaded: Result<Option<Profile>, String>) -> (Profile, Option<String>) {
+    match loaded {
+        Ok(p) => (p.unwrap_or_default(), None),
+        Err(e) => (
+            Profile::ReviewOnly,
+            Some(format!(
+                "global config is invalid, so the strictest profile applies: {e}"
+            )),
+        ),
+    }
+}
+
+/// Like `check`, adding `note` (why the profile was chosen) to a refusal.
+pub fn check_noted(profile: Profile, note: Option<&str>, args: &[String]) -> Result<()> {
+    check(profile, args).map_err(|e| match note {
+        Some(n) => e.context(n.to_string()),
+        None => e,
+    })
+}
+
 /// Hunk subcommands that discard work or rewrite history.
 const HUNK_DESTRUCTIVE: &[&str] = &[
     "discard", "undo", "amend", "reword", "fold", "squash", "move", "split",
@@ -87,5 +109,14 @@ mod tests {
         assert!(check(Profile::ReviewOnly, &a("add feat")).is_ok());
         assert!(check(Profile::ReviewOnly, &a("hunk stage a")).is_ok());
         assert!(check(Profile::ReviewOnly, &a("list")).is_ok());
+    }
+
+    #[test]
+    fn invalid_config_fails_closed() {
+        let (p, note) = resolve(Err("bad yaml".into()));
+        assert_eq!(p, Profile::ReviewOnly);
+        assert!(note.unwrap().contains("bad yaml"));
+        assert_eq!(resolve(Ok(None)), (Profile::Trusted, None));
+        assert_eq!(resolve(Ok(Some(Profile::Safe))), (Profile::Safe, None));
     }
 }

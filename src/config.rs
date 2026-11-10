@@ -3219,12 +3219,12 @@ impl Config {
     }
 
     /// Safety profile from the global config; `trusted` when absent or invalid.
-    pub fn global_safety_profile() -> crate::profile::Profile {
-        Self::load_global()
-            .ok()
-            .flatten()
-            .map(|c| c.safety_profile)
-            .unwrap_or_default()
+    pub fn global_safety_profile() -> (crate::profile::Profile, Option<String>) {
+        crate::profile::resolve(
+            Self::load_global()
+                .map(|c| c.map(|c| c.safety_profile))
+                .map_err(|e| format!("{e:#}")),
+        )
     }
 
     /// `guard` section of the global config; defaults when absent or invalid.

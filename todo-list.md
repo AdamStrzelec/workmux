@@ -184,6 +184,8 @@ Ograniczenia (uczciwie):
 - Literówka lub błąd składni w configu daje cichy powrót do `trusted` (fail-open). Do rozważenia: fail-closed.
 - Blokuje tylko komendy workmux, nie `hunk` poza listą wyżej, i nie obejmuje zdalnych workspace'ów po stronie węzła (`node`).
 
+Uzupełnienie (fail-closed): gdy globalny config istnieje, ale się nie parsuje (literówka, zła struktura), obowiązuje najostrzejszy profil `review-only`, a odmowa pokazuje przyczynę i błąd parsowania. Brak pliku to nadal `trusted`. Komendy tylko do odczytu działają bez zmian, więc plik można naprawić ręcznie. Skutek uboczny: literówka w dowolnej sekcji configu (nie tylko profilu) blokuje `merge`, `remove` i `rebase` aż do naprawy.
+
 ### 3.14 Wykrywanie kolizji `workmux collisions` (opis szczegółowy)
 
 Cel: zanim dwie osoby (albo dwa agenty) skończą pracę i pokłócą się w merge, pokazać, że dotykają tego samego.
@@ -249,7 +251,8 @@ Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, pr
    - ⬜ współdzielenie logu przez katalog team, widok w dashboardzie
 2. **Profile bezpieczeństwa** (`safe`, `review-only`, `trusted`): jednym ustawieniem określają tryb Claude, zakazane ścieżki i politykę git.
    - ✅ `safety_profile` w globalnym configu: ograniczenia komend workmux (patrz 3.13)
-   - ⬜ tryb Claude per profil, fail-closed przy błędnym configu, wymuszenie poza workmux (protected branch, hooki serwera)
+   - ✅ fail-closed: nieparsowalny global config daje `review-only` (patrz 3.13)
+   - ⬜ tryb Claude per profil, wymuszenie poza workmux (protected branch, hooki serwera)
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
    - ✅ `workmux collisions [--json]`: pliki zmienione w 2+ worktree oraz branche z agentami 2+ użytkowników (patrz 3.14)
    - ⬜ ostrzeżenie w dashboardzie i przy `workmux add`, wpis w audit logu, kolizje plików między użytkownikami (wymaga listy plików w migawce)
@@ -313,5 +316,6 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `guard.review_command` | Wpisz w global config `guard: {review_command: "cat >/dev/null; exit 1"}` i `workmux merge` ma odmówić; potem `exit 0` i `--skip-review`. Sprawdź prawdziwą komendę z LLM, duży diff, merge z dashboardu (nie powinien jej uruchamiać) | Sprawdzone tylko testem jednostkowym wywołania komendy; nie e2e |
 | `guard.snapshot_before_send` | Włącz w global config, wyślij `workmux send <agent> \"...\"` do lokalnego agenta; sprawdź `snapshot saved: ...` i `snapshot list`. Zmierz czas na dużym repo | Niesprawdzone z prawdziwym agentem; tylko build i testy |
 | `snapshot prune` | W worktree z kilkoma snapshotami: `workmux snapshot prune --keep 2`, potem `snapshot list`. Sprawdź `snapshot prune` w audit logu | Sprawdzone ręcznie na tymczasowym repo (3 snapshoty, keep 1) |
+| fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |

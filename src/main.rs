@@ -67,8 +67,9 @@ fn main() -> Result<()> {
         "workmux start"
     );
 
-    let result =
-        profile::check(config::Config::global_safety_profile(), &args).and_then(|()| cli::run());
+    let (safety_profile, profile_note) = config::Config::global_safety_profile();
+    let result = profile::check_noted(safety_profile, profile_note.as_deref(), &args)
+        .and_then(|()| cli::run());
     match result {
         Ok(result) => {
             info!(
