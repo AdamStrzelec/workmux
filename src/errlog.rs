@@ -112,6 +112,35 @@ pub fn read_all() -> Vec<Record> {
         .collect()
 }
 
+fn seen_path() -> Option<PathBuf> {
+    crate::xdg::state_dir().ok().map(|d| d.join("errors.seen"))
+}
+
+/// Mark everything recorded so far as reviewed.
+pub fn mark_seen() {
+    if let Some(p) = seen_path() {
+        let _ = std::fs::write(p, now().to_string());
+    }
+}
+
+fn seen_ts() -> u64 {
+    seen_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// Panics recorded since the journal was last reviewed. Ordinary command
+/// errors are excluded: they are mostly user mistakes and would make the
+/// dashboard indicator noisy.
+pub fn unseen_panics() -> usize {
+    let seen = seen_ts();
+    read_all()
+        .iter()
+        .filter(|r| r.kind == "panic" && r.ts > seen)
+        .count()
+}
+
 /// Record panics, then run the previous hook so the user still sees them.
 pub fn install_panic_hook(command: String) {
     let previous = std::panic::take_hook();

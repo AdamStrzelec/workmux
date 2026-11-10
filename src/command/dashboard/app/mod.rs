@@ -94,6 +94,8 @@ pub struct App {
     pub is_git_fetching: Arc<AtomicBool>,
     /// Latest Claude plan usage snapshot, shown in the tab header
     pub usage: Option<crate::usage::Snapshot>,
+    /// Panics recorded since `workmux errors` was last run
+    pub unseen_errors: usize,
     /// Listening TCP ports, rescanned every few seconds.
     pub ports: Vec<crate::ports::Listener>,
     last_ports_fetch: std::time::Instant,
@@ -297,6 +299,7 @@ impl App {
             last_git_fetch: std::time::Instant::now() - Duration::from_secs(60),
             is_git_fetching: Arc::new(AtomicBool::new(false)),
             usage: crate::usage::cache::cached_snapshot(),
+            unseen_errors: crate::errlog::unseen_panics(),
             ports: Vec::new(),
             last_ports_fetch: std::time::Instant::now() - PORTS_FETCH_INTERVAL,
             is_ports_fetching: Arc::new(AtomicBool::new(false)),
@@ -472,6 +475,7 @@ impl App {
         if self.last_usage_fetch.elapsed() >= USAGE_FETCH_INTERVAL {
             self.last_usage_fetch = std::time::Instant::now();
             self.spawn_usage_fetch();
+            self.unseen_errors = crate::errlog::unseen_panics();
         }
 
         // Trigger PR fetch every 30 seconds (only update timer if fetch actually started)

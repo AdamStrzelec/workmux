@@ -84,6 +84,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 
 6. **Dziennik błędów i zgłaszanie** (decyzja: tylko lokalnie, bez automatycznego commita i pusha):
    - ✅ `errors.log` w katalogu stanu, `workmux errors`
+   - ✅ wskaźnik `⚠ N (workmux errors)` w nagłówku dashboardu (tylko paniki, znika po `workmux errors`)
    - ⬜ `workmux report`: zanonimizowany podgląd i issue w `AdamStrzelec/workmux` po potwierdzeniu, z deduplikacją
    - ⬜ rozróżnienie błędów użytkownika od prawdziwych bugów (teraz każdy błąd komendy trafia do dziennika)
    - 💡 `workmux fix <issue>`: agent naprawia błąd na żądanie, z limitem tokenów; PR tylko do forka, nigdy do upstream
@@ -119,3 +120,4 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `workmux usage` | Odczyt tokena na Linuksie (`~/.claude/.credentials.json`, `CLAUDE_CONFIG_DIR`) | Sprawdzone tylko na macOS (Keychain) |
 | Tryb bypass permissions | Wykrywanie i nadzór nad nietechnicznymi użytkownikami | Funkcja jeszcze nie zbudowana |
 | Dziennik błędów | Zapis przy prawdziwej panice (hook), rotacja przy >512 KB | Przetestowane tylko trim i serializacja oraz jeden błąd komendy; panika nie została wywołana end-to-end |
+| Wskaźnik błędów w dashboardzie | Wygląd `⚠ N` w nagłówku, zniknięcie po `workmux errors`, zachowanie na wąskim terminalu | Nie uruchamiałem dashboardu w tmux; brak testu jednostkowego (zależy od zmiennej środowiskowej) |

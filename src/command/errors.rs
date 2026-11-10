@@ -6,6 +6,7 @@ use crate::errlog;
 
 pub fn run(json: bool, last: usize) -> Result<()> {
     let all = errlog::read_all();
+    errlog::mark_seen();
     let skip = all.len().saturating_sub(last);
     let records = &all[skip..];
     if json {
