@@ -157,7 +157,7 @@ Ograniczenia (uczciwie):
 - `--allow-protected` może podać też agent. To bramka ostrzegawcza, nie twarde zabezpieczenie. Twarde wymaga profili `safe`/`review-only` (sekcja 4).
 - Baza to `--into` albo `main_branch`, nie automatycznie wykryty branch bazowy z `workmux add`. Przy innej bazie lista może być szersza (bezpieczniej, nie węziej).
 - Nie obejmuje merge zdalnych workspace'ów ani merge przez sandbox/RPC.
-- Blokada nie zapisuje się jeszcze w audit logu.
+- Zablokowany merge zapisuje się w audit logu jako `merge blocked (protected files)` (ok=false), obok zwykłego wpisu `merge` (ok=false).
 
 ## 4. Propozycje (moje), zaakceptowane
 
@@ -165,7 +165,8 @@ Ograniczenia (uczciwie):
    - ✅ lokalny `audit.log` (stan usera, poza gitem) + `workmux audit [--json] [--last N]`: user, komenda (add/merge/remove/close/rename/rebase/send/run/set-base/resurrect/sync-files, `hunk` poza list/show), projekt, branch, ok/FAILED. Bez wartości argumentów.
    - ✅ `workmux guard [--json]`: globalna konfiguracja `guard.protected_paths` (wzorce glob; bez `/` dopasowanie po nazwie pliku na dowolnej głębokości, np. `.env*`; z `/` po ścieżce od roota repo, np. `secrets/**`). Dla każdego worktree pokazuje zmienione chronione pliki (commity względem bazy + niezacommitowane + nieśledzone). Kod wyjścia 2, gdy coś znaleziono. Tylko wykrywa, niczego nie blokuje ani nie cofa.
    - ✅ `workmux merge` odmawia, gdy branch zmienił chronione pliki; obejście `--allow-protected` (patrz 3.12)
-   - ⬜ współdzielenie logu przez katalog team, wpis guard w audit logu, widok w dashboardzie
+   - ✅ wpisy w audit logu: `guard violation` (gdy `workmux guard` coś znajdzie) i `merge blocked (protected files)`; tylko etykieta, bez nazw plików
+   - ⬜ współdzielenie logu przez katalog team, widok w dashboardzie
 2. **Profile bezpieczeństwa** (`safe`, `review-only`, `trusted`): jednym ustawieniem określają tryb Claude, zakazane ścieżki i politykę git.
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.

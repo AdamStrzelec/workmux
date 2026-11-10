@@ -87,6 +87,7 @@ pub fn ensure_merge_allowed(cfg: &GuardConfig, name: &str, target: &str) -> Resu
     if hits.is_empty() {
         return Ok(());
     }
+    crate::audit::record_action("merge blocked (protected files)".into(), false);
     bail!(
         "merge blocked: protected files changed:\n  {}\nReview them, or rerun with --allow-protected.",
         hits.join("\n  ")

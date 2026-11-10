@@ -43,6 +43,7 @@ pub fn run(json: bool) -> Result<()> {
         }
     }
     if !report.is_empty() {
+        crate::audit::record_action("guard violation".into(), false);
         std::process::exit(2);
     }
     Ok(())

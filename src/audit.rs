@@ -45,9 +45,13 @@ pub fn action_label(args: &[String]) -> Option<String> {
 
 /// Record a finished command if it changes state. Never fails the caller.
 pub fn record_command(args: &[String], ok: bool) {
-    let Some(action) = action_label(args) else {
-        return;
-    };
+    if let Some(action) = action_label(args) {
+        record_action(action, ok);
+    }
+}
+
+/// Record an explicit event (e.g. `merge blocked`). Never fails the caller.
+pub fn record_action(action: String, ok: bool) {
     let cwd = std::env::current_dir().unwrap_or_default();
     let cfg = crate::config::Config::global_team_config();
     let event = Event {
