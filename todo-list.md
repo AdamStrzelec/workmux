@@ -200,7 +200,9 @@ Ograniczenia (uczciwie):
 - Tylko wykrywa, nie blokuje ani niczego nie zapisuje do audit logu.
 - Zmiany plików widzi tylko w worktree tego samego repozytorium na tej maszynie. Migawki team zawierają branche, nie pliki (celowo, ze względu na prywatność), więc kolizji na poziomie plików między użytkownikami nie widać.
 - Nazwa projektu to nazwa katalogu repo, więc dwa różne repozytoria o tej samej nazwie zlałyby się w jedno.
-- Wymaga ręcznego uruchomienia; nie ma jeszcze ostrzeżenia w dashboardzie ani przy `workmux add`.
+- Wymaga ręcznego uruchomienia; nie ma jeszcze ostrzeżenia w dashboardzie. Przy `workmux add` jest ostrzeżenie o branchu (patrz niżej).
+
+Uzupełnienie (ostrzeżenie przy `add`): `workmux add <branch>` (bez `--dry-run`) czyta migawki z `team.dir` i jeśli inny użytkownik ma świeży wpis agenta na tym samym branchu tego samego projektu, wypisuje na stderr `warning: branch '<b>' already has an agent of: <user>`. Tylko ostrzega, nigdy nie blokuje i nie trafia do audit logu. Bez `team.dir` albo przy błędzie odczytu jest cicho. Sprawdza tylko zadany jawnie branch (nie `--auto-name`, `--pr`, ani nazw z promptu), a pliki między użytkownikami nadal niewidoczne.
 
 ### 3.15 Snapshot i rollback worktree `workmux snapshot` (opis szczegółowy)
 
@@ -312,6 +314,7 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `workmux merge` + guard | Z `guard.protected_paths: [".env*"]` zmień `.env` w worktree i uruchom `workmux merge`: ma odmówić z listą plików. Powtórz z `--allow-protected`: ma przejść. Sprawdź też merge bez zmian chronionych | Brak testu na prawdziwym repo, tylko kompilacja i istniejące testy |
 | `safety_profile` | W globalnym configu ustaw `safety_profile: review-only`. Sprawdź: `workmux merge x`, `workmux remove x`, `workmux hunk discard` mają odmówić; `workmux add`, `workmux list`, `workmux hunk commit` mają działać. Potem `safe` (blokuje tylko rewrite/discard i `merge --allow-protected`). Zajrzyj do `workmux audit` | Testy pokrywają tylko klasyfikację komend, nie przepływ na prawdziwym configu |
 | `workmux collisions` | Zmień ten sam plik w dwóch worktree i uruchom: ma wypisać `file ...`, kod wyjścia 2. Z `team.dir` i dwoma użytkownikami na tym samym branchu ma wypisać `branch ...` | Testy pokrywają tylko logikę łączenia; na realnym repo sprawdzony tylko przypadek bez kolizji |
+| Ostrzeżenie przy `workmux add` | Z `team.dir` i świeżą migawką drugiego użytkownika z agentem na branchu X uruchom `workmux add X`: ma pojawić się `warning: branch 'X' already has an agent of: ...` i worktree dalej powstaje | Tylko testy jednostkowe logiki; ścieżek `--auto-name`/`--pr`/headless/RPC nie sprawdzałem na żywo |
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |
 | `guard.review_command` | Wpisz w global config `guard: {review_command: "cat >/dev/null; exit 1"}` i `workmux merge` ma odmówić; potem `exit 0` i `--skip-review`. Sprawdź prawdziwą komendę z LLM, duży diff, merge z dashboardu (nie powinien jej uruchamiać) | Sprawdzone tylko testem jednostkowym wywołania komendy; nie e2e |
 | `guard.snapshot_before_send` | Włącz w global config, wyślij `workmux send <agent> \"...\"` do lokalnego agenta; sprawdź `snapshot saved: ...` i `snapshot list`. Zmierz czas na dużym repo | Niesprawdzone z prawdziwym agentem; tylko build i testy |

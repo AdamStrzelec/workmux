@@ -50,6 +50,56 @@ pub fn shared_branches(
     by_branch
 }
 
+/// Other users (not `me`) with a fresh snapshot showing an agent on `branch`
+/// of `project` (sorted, unique).
+pub fn others_on_branch(
+    snaps: &[Snapshot],
+    project: &str,
+    branch: &str,
+    me: &str,
+    now: u64,
+    stale_after: u64,
+) -> Vec<String> {
+    let mut users: Vec<String> = snaps
+        .iter()
+        .filter(|s| s.user != me && now.saturating_sub(s.published_at) <= stale_after)
+        .filter(|s| {
+            s.agents
+                .iter()
+                .any(|a| a.project == project && a.branch == branch)
+        })
+        .map(|s| s.user.clone())
+        .collect();
+    users.sort();
+    users.dedup();
+    users
+}
+
+/// Print a warning when another user already works on `branch`. Needs
+/// `team.dir`; silent otherwise and on any error. Never blocks.
+pub fn warn_at_add(branch: &str) {
+    let cfg = crate::config::Config::global_team_config();
+    let Ok(dir) = crate::team::resolve_dir(&cfg) else {
+        return;
+    };
+    let Ok(snaps) = crate::team::read_snapshots(&dir) else {
+        return;
+    };
+    let project = crate::team::project_of(&std::env::current_dir().unwrap_or_default());
+    let me = crate::team::resolve_user(&cfg);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let others = others_on_branch(&snaps, &project, branch, &me, now, cfg.stale_after_secs);
+    if !others.is_empty() {
+        eprintln!(
+            "warning: branch '{branch}' already has an agent of: {}",
+            others.join(", ")
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,5 +150,20 @@ mod tests {
         let m = shared_branches(&snaps, "p", 110, 60);
         assert_eq!(m.len(), 1);
         assert_eq!(m["feat"], vec!["ania", "marek"]);
+    }
+
+    #[test]
+    fn others_on_branch_skips_me_and_stale() {
+        let snaps = [
+            snap("ania", 100, "p", "feat"),
+            snap("marek", 100, "p", "feat"),
+            snap("old", 0, "p", "feat"),
+            snap("zed", 100, "q", "feat"),
+        ];
+        assert_eq!(
+            others_on_branch(&snaps, "p", "feat", "ania", 110, 60),
+            vec!["marek"]
+        );
+        assert!(others_on_branch(&snaps, "p", "none", "ania", 110, 60).is_empty());
     }
 }

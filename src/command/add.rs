@@ -436,6 +436,9 @@ pub fn run(
             ],
         )?;
     }
+    if let (Some(b), false) = (branch_name, dry_run) {
+        crate::collision::warn_at_add(b);
+    }
     if headless {
         return run_headless(
             branch_name,
