@@ -707,6 +707,12 @@ enum Commands {
         last: usize,
     },
 
+    /// Save, list and restore snapshots of the current worktree
+    Snapshot {
+        #[command(subcommand)]
+        command: SnapshotCommands,
+    },
+
     /// Report changes to protected paths (guard.protected_paths) per worktree
     Guard {
         /// Output as JSON
@@ -1435,6 +1441,11 @@ pub fn run() -> Result<()> {
             refresh,
         } => command::usage::run(json, tmux, refresh),
         Commands::Errors { json, last } => command::errors::run(json, last),
+        Commands::Snapshot { command } => match command {
+            SnapshotCommands::Save { label } => command::snapshot::save(label),
+            SnapshotCommands::List { json } => command::snapshot::list(json),
+            SnapshotCommands::Restore { id } => command::snapshot::restore(&id),
+        },
         Commands::Guard { json } => command::guard::run(json),
         Commands::Collisions { json } => command::collisions::run(json),
         Commands::Audit { json, last } => command::audit::run(json, last),
@@ -2329,5 +2340,25 @@ pub enum HunkCommand {
         #[arg(short, long)]
         message: String,
         ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SnapshotCommands {
+    /// Save the working tree (tracked, modified and untracked files)
+    Save {
+        /// Optional label, e.g. "before-agent"
+        label: Option<String>,
+    },
+    /// List snapshots of the current branch
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Restore the working tree to a snapshot (current state is saved first)
+    Restore {
+        /// Snapshot id from `workmux snapshot list`
+        id: String,
     },
 }

@@ -34,6 +34,7 @@ mod remote;
 mod sandbox;
 mod shell;
 mod skills;
+mod snapshot;
 mod spinner;
 mod state;
 mod team;

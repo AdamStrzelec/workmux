@@ -39,6 +39,10 @@ pub fn action_label(args: &[String]) -> Option<String> {
             let sub = positional.next()?.as_str();
             (!HUNK_READ_ONLY.contains(&sub)).then(|| format!("hunk {sub}"))
         }
+        "snapshot" => {
+            let sub = positional.next()?.as_str();
+            (sub == "restore").then(|| "snapshot restore".to_string())
+        }
         _ => None,
     }
 }

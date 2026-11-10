@@ -200,6 +200,16 @@ Ograniczenia (uczciwie):
 - Nazwa projektu to nazwa katalogu repo, więc dwa różne repozytoria o tej samej nazwie zlałyby się w jedno.
 - Wymaga ręcznego uruchomienia; nie ma jeszcze ostrzeżenia w dashboardzie ani przy `workmux add`.
 
+### 3.15 Snapshot i rollback worktree `workmux snapshot` (opis szczegółowy)
+
+1. `workmux snapshot save [etykieta]` w worktree zapisuje cały stan plików: śledzone, zmienione i nieśledzone (bez ignorowanych przez `.gitignore`).
+2. Zapis idzie przez tymczasowy indeks, więc prawdziwy indeks, branch i historia nie są ruszane. Powstaje commit trzymany przez ref `refs/workmux/snapshots/<branch>/<czas>-<etykieta>` (lokalnie, nie wypycha się go z `git push` domyślnie).
+3. `workmux snapshot list [--json]` pokazuje snapshoty bieżącego brancha, najnowsze pierwsze.
+4. `workmux snapshot restore <id>` najpierw zapisuje obecny stan jako `before-restore` (żeby cofnięcie było możliwe), potem przywraca pliki ze snapshotu (`git read-tree --reset -u`) i zdejmuje je z indeksu.
+5. Restore trafia do audit logu jako `snapshot restore`; save i list nie.
+
+Ograniczenia: przywraca tylko pliki, nie cofa commitów ani nie przesuwa brancha. Nieśledzone pliki utworzone po snapshocie zostają (nic nie jest kasowane, poza plikami śledzonymi, których nie było w snapshocie). Snapshot jest ręczny, bez automatu i bez czyszczenia starych. Git z pominięciem hooków (jak reszta narzędzi).
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -217,6 +227,8 @@ Ograniczenia (uczciwie):
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
 6. **Snapshot / szybki rollback worktree**, gdy agent coś zepsuje.
+   - ✅ `workmux snapshot save [etykieta] | list [--json] | restore <id>` (patrz 3.15)
+   - ⬜ automatyczny snapshot przed `workmux send`/`run`, czyszczenie starych snapshotów, snapshot commitów (reset brancha)
 
 5. **Hunki w dashboardzie** ❌ odpuszczone (decyzja użytkownika, niepotrzebne w UI): dashboard ma już tryb patch (staging hunk po hunku, split, undo) w `src/command/dashboard/diff_ops.rs`, więc pełny podgląd i staging w TUI byłby duplikatem. Zostaje do decyzji wąski zakres: liczba niezacommitowanych hunków per worktree w liście oraz oznaczenie chronionej gałęzi.
 
@@ -265,3 +277,4 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `safety_profile` | W globalnym configu ustaw `safety_profile: review-only`. Sprawdź: `workmux merge x`, `workmux remove x`, `workmux hunk discard` mają odmówić; `workmux add`, `workmux list`, `workmux hunk commit` mają działać. Potem `safe` (blokuje tylko rewrite/discard i `merge --allow-protected`). Zajrzyj do `workmux audit` | Testy pokrywają tylko klasyfikację komend, nie przepływ na prawdziwym configu |
 | `workmux collisions` | Zmień ten sam plik w dwóch worktree i uruchom: ma wypisać `file ...`, kod wyjścia 2. Z `team.dir` i dwoma użytkownikami na tym samym branchu ma wypisać `branch ...` | Testy pokrywają tylko logikę łączenia; na realnym repo sprawdzony tylko przypadek bez kolizji |
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |
+| `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |

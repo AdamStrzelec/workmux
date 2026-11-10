@@ -38,6 +38,7 @@ pub mod set_window_status;
 pub mod setup;
 pub mod shell;
 pub mod sidebar;
+pub mod snapshot;
 pub mod status;
 pub mod sync_files;
 pub mod team;
