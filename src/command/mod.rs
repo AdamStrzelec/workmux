@@ -12,6 +12,7 @@ pub mod docs;
 pub mod errors;
 pub mod exec;
 pub mod guard;
+pub mod handoff;
 pub mod host_exec;
 pub mod hunk;
 pub mod last_agent;

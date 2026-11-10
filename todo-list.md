@@ -210,6 +210,15 @@ Ograniczenia (uczciwie):
 
 Ograniczenia: przywraca tylko pliki, nie cofa commitów ani nie przesuwa brancha. Nieśledzone pliki utworzone po snapshocie zostają (nic nie jest kasowane, poza plikami śledzonymi, których nie było w snapshocie). Snapshot jest ręczny, bez automatu i bez czyszczenia starych. Git z pominięciem hooków (jak reszta narzędzi).
 
+### 3.16 Handoff `workmux handoff` (opis szczegółowy)
+
+1. W worktree `workmux handoff` drukuje notatkę markdown dla osoby lub agenta przejmującego pracę.
+2. Zawartość: nazwa brancha, branch bazowy, commity od bazy (`git log base..HEAD`), zmiany niezacommitowane (`git status --porcelain`), wszystkie zmienione pliki (commity + niezacommitowane + nieśledzone) oraz liczba snapshotów brancha.
+3. `--json` daje te same dane maszynowo.
+4. Tylko czyta; nic nie zapisuje i nie trafia do audit logu. Git leci przez utwardzony konstruktor (bez hooków).
+
+Ograniczenia: bez treści rozmowy z agentem i bez przełączania okna tmux (czeka na claude-history). Notatka jest do skopiowania ręcznie.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -225,6 +234,8 @@ Ograniczenia: przywraca tylko pliki, nie cofa commitów ani nie przesuwa brancha
    - ✅ `workmux collisions [--json]`: pliki zmienione w 2+ worktree oraz branche z agentami 2+ użytkowników (patrz 3.14)
    - ⬜ ostrzeżenie w dashboardzie i przy `workmux add`, wpis w audit logu, kolizje plików między użytkownikami (wymaga listy plików w migawce)
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
+   - ✅ `workmux handoff [--json]`: notatka przekazania bieżącego worktree (branch, baza, commity od bazy, zmiany niezacommitowane, wszystkie zmienione pliki, liczba snapshotów) — patrz 3.16
+   - ⬜ przełączenie okna tmux, dołączenie ostatnich promptów/historii rozmowy (wymaga claude-history)
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
 6. **Snapshot / szybki rollback worktree**, gdy agent coś zepsuje.
    - ✅ `workmux snapshot save [etykieta] | list [--json] | restore <id>` (patrz 3.15)
@@ -277,4 +288,5 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `safety_profile` | W globalnym configu ustaw `safety_profile: review-only`. Sprawdź: `workmux merge x`, `workmux remove x`, `workmux hunk discard` mają odmówić; `workmux add`, `workmux list`, `workmux hunk commit` mają działać. Potem `safe` (blokuje tylko rewrite/discard i `merge --allow-protected`). Zajrzyj do `workmux audit` | Testy pokrywają tylko klasyfikację komend, nie przepływ na prawdziwym configu |
 | `workmux collisions` | Zmień ten sam plik w dwóch worktree i uruchom: ma wypisać `file ...`, kod wyjścia 2. Z `team.dir` i dwoma użytkownikami na tym samym branchu ma wypisać `branch ...` | Testy pokrywają tylko logikę łączenia; na realnym repo sprawdzony tylko przypadek bez kolizji |
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |
+| `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |

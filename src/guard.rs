@@ -45,7 +45,7 @@ pub fn violations(cfg: &GuardConfig, files: &[String]) -> Vec<String> {
     out
 }
 
-fn git_lines(path: &Path, args: &[&str]) -> Result<Vec<String>> {
+pub fn git_lines(path: &Path, args: &[&str]) -> Result<Vec<String>> {
     let out = crate::git::unattended_git(Some(path))?
         .args(args)
         .output()

@@ -707,6 +707,13 @@ enum Commands {
         last: usize,
     },
 
+    /// Print a hand-off note for the current worktree (branch, commits, changed files)
+    Handoff {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Save, list and restore snapshots of the current worktree
     Snapshot {
         #[command(subcommand)]
@@ -1447,6 +1454,7 @@ pub fn run() -> Result<()> {
             SnapshotCommands::Restore { id } => command::snapshot::restore(&id),
         },
         Commands::Guard { json } => command::guard::run(json),
+        Commands::Handoff { json } => command::handoff::run(json),
         Commands::Collisions { json } => command::collisions::run(json),
         Commands::Audit { json, last } => command::audit::run(json, last),
         Commands::Team { json, no_publish } => command::team::run(json, no_publish),
