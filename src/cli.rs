@@ -504,6 +504,10 @@ enum Commands {
         /// Merge even if the branch changed files matching guard.protected_paths
         #[arg(long)]
         allow_protected: bool,
+
+        /// Merge without running guard.review_command
+        #[arg(long)]
+        skip_review: bool,
     },
 
     /// Rebase a worktree branch onto its base branch
@@ -1372,6 +1376,7 @@ pub fn run() -> Result<()> {
             no_hooks,
             notification,
             allow_protected,
+            skip_review,
         } => command::merge::run(
             name.as_deref(),
             into.as_deref(),
@@ -1384,6 +1389,7 @@ pub fn run() -> Result<()> {
             no_hooks,
             notification,
             allow_protected,
+            skip_review,
         ),
         Commands::Rebase { name } => command::rebase::run(name.as_deref()),
         Commands::Remove {

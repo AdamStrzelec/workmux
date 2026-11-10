@@ -15,6 +15,11 @@ pub struct GuardConfig {
     /// (`secrets/**`).
     #[serde(default)]
     pub protected_paths: Vec<String>,
+    /// Shell command run before `workmux merge` (e.g. an LLM review). It gets
+    /// the branch diff on stdin and `WORKMUX_BRANCH`/`WORKMUX_TARGET` in the
+    /// environment; a non-zero exit blocks the merge.
+    #[serde(default)]
+    pub review_command: Option<String>,
 }
 
 const OPTS: MatchOptions = MatchOptions {
@@ -94,6 +99,50 @@ pub fn ensure_merge_allowed(cfg: &GuardConfig, name: &str, target: &str) -> Resu
     )
 }
 
+/// Run `guard.review_command` for the worktree `name` before merging into
+/// `target`. No-op when unset. A non-zero exit blocks the merge.
+pub fn ensure_review_passed(cfg: &GuardConfig, name: &str, target: &str) -> Result<()> {
+    let Some(cmd) = cfg
+        .review_command
+        .as_deref()
+        .filter(|c| !c.trim().is_empty())
+    else {
+        return Ok(());
+    };
+    let (path, _) = crate::git::find_worktree(name)?;
+    let base = crate::git::get_merge_base_in(Some(&path), target)?;
+    let range = format!("{base}...HEAD");
+    let diff = crate::git::unattended_git(Some(&path))?
+        .args(["diff", &range])
+        .output()
+        .context("failed to run git diff")?
+        .stdout;
+    let ok = run_review(cmd, &path, name, target, &diff)?;
+    if ok {
+        return Ok(());
+    }
+    crate::audit::record_action("merge blocked (review failed)".into(), false);
+    bail!("merge blocked: review command failed. Fix the findings, or rerun with --skip-review.")
+}
+
+fn run_review(cmd: &str, dir: &Path, branch: &str, target: &str, diff: &[u8]) -> Result<bool> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("sh")
+        .args(["-c", cmd])
+        .current_dir(dir)
+        .env("WORKMUX_BRANCH", branch)
+        .env("WORKMUX_TARGET", target)
+        .stdin(Stdio::piped())
+        .spawn()
+        .context("failed to start review command")?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // The command may exit without reading the diff; ignore broken pipe.
+        let _ = stdin.write_all(diff);
+    }
+    Ok(child.wait()?.success())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +150,7 @@ mod tests {
     fn cfg(p: &[&str]) -> GuardConfig {
         GuardConfig {
             protected_paths: p.iter().map(|s| s.to_string()).collect(),
+            review_command: None,
         }
     }
 
@@ -126,5 +176,14 @@ mod tests {
     fn empty_config_and_bad_pattern_match_nothing() {
         assert!(violations(&cfg(&[]), &[".env".into()]).is_empty());
         assert!(violations(&cfg(&["[bad"]), &[".env".into()]).is_empty());
+    }
+
+    #[test]
+    fn review_command_exit_status_decides() {
+        let d = std::env::temp_dir();
+        assert!(run_review("exit 0", &d, "b", "main", b"x").unwrap());
+        assert!(!run_review("exit 3", &d, "b", "main", b"x").unwrap());
+        assert!(run_review("grep -q hello", &d, "b", "main", b"hello").unwrap());
+        assert!(run_review("test \"$WORKMUX_BRANCH\" = feat", &d, "feat", "main", b"").unwrap());
     }
 }

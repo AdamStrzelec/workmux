@@ -219,6 +219,15 @@ Ograniczenia: przywraca tylko pliki, nie cofa commitów ani nie przesuwa brancha
 
 Ograniczenia: bez treści rozmowy z agentem i bez przełączania okna tmux (czeka na claude-history). Notatka jest do skopiowania ręcznie.
 
+### 3.17 Bramka przed mergem `guard.review_command` (opis szczegółowy)
+
+1. W globalnym configu `guard.review_command` to dowolna komenda shell, np. wywołanie consult-llm jako review-panel. Domyślnie pusta (brak bramki).
+2. `workmux merge` uruchamia ją (`sh -c`, katalog = worktree) po sprawdzeniu `protected_paths` i przed właściwym mergem. Na stdin dostaje diff `base...HEAD`; w środowisku `WORKMUX_BRANCH` i `WORKMUX_TARGET`. Wyjście komendy widać w terminalu.
+3. Kod wyjścia ≠ 0 blokuje merge i zapisuje `merge blocked (review failed)` w audit logu. `--skip-review` pomija bramkę.
+4. Sam workmux nie woła żadnego LLM: komendę wybiera użytkownik. Do consult-llm wystarczy ją tu wpisać, gdy zostanie zintegrowane (sekcja 4).
+
+Ograniczenia: bez limitu czasu i bez limitu rozmiaru diffu (cały diff idzie na stdin). To bramka ostrzegawcza, nie granica bezpieczeństwa: użytkownik albo agent z dostępem do configu lub surowego `git merge` ją omija. Działa tylko w `workmux merge` z CLI; merge z dashboardu/sidebaru i zdalny (`homecoming`) jej nie sprawdzają.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -288,5 +297,6 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `safety_profile` | W globalnym configu ustaw `safety_profile: review-only`. Sprawdź: `workmux merge x`, `workmux remove x`, `workmux hunk discard` mają odmówić; `workmux add`, `workmux list`, `workmux hunk commit` mają działać. Potem `safe` (blokuje tylko rewrite/discard i `merge --allow-protected`). Zajrzyj do `workmux audit` | Testy pokrywają tylko klasyfikację komend, nie przepływ na prawdziwym configu |
 | `workmux collisions` | Zmień ten sam plik w dwóch worktree i uruchom: ma wypisać `file ...`, kod wyjścia 2. Z `team.dir` i dwoma użytkownikami na tym samym branchu ma wypisać `branch ...` | Testy pokrywają tylko logikę łączenia; na realnym repo sprawdzony tylko przypadek bez kolizji |
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |
+| `guard.review_command` | Wpisz w global config `guard: {review_command: "cat >/dev/null; exit 1"}` i `workmux merge` ma odmówić; potem `exit 0` i `--skip-review`. Sprawdź prawdziwą komendę z LLM, duży diff, merge z dashboardu (nie powinien jej uruchamiać) | Sprawdzone tylko testem jednostkowym wywołania komendy; nie e2e |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |

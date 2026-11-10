@@ -17,6 +17,7 @@ pub fn run(
     no_hooks: bool,
     notification: bool,
     allow_protected: bool,
+    skip_review: bool,
 ) -> Result<()> {
     if crate::remote::node::operation::in_session() {
         return crate::remote::node::operation::submit(
@@ -121,6 +122,15 @@ pub fn run(
     if !allow_protected {
         let target = into_branch.unwrap_or(&context.main_branch);
         crate::guard::ensure_merge_allowed(
+            &crate::config::Config::global_guard_config(),
+            &name_to_merge,
+            target,
+        )?;
+    }
+
+    if !skip_review {
+        let target = into_branch.unwrap_or(&context.main_branch);
+        crate::guard::ensure_review_passed(
             &crate::config::Config::global_guard_config(),
             &name_to_merge,
             target,
