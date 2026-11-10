@@ -1054,6 +1054,10 @@ pub struct Config {
     #[serde(default)]
     pub team: crate::team::TeamConfig,
 
+    /// Safety profile (`trusted`, `safe`, `review-only`). Global config only.
+    #[serde(default)]
+    pub safety_profile: crate::profile::Profile,
+
     /// Protected paths (`workmux guard`). Global config only.
     #[serde(default)]
     pub guard: crate::guard::GuardConfig,
@@ -3211,6 +3215,15 @@ impl Config {
             .ok()
             .flatten()
             .map(|c| c.team)
+            .unwrap_or_default()
+    }
+
+    /// Safety profile from the global config; `trusted` when absent or invalid.
+    pub fn global_safety_profile() -> crate::profile::Profile {
+        Self::load_global()
+            .ok()
+            .flatten()
+            .map(|c| c.safety_profile)
             .unwrap_or_default()
     }
 

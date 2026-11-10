@@ -27,6 +27,7 @@ mod multiplexer;
 mod naming;
 mod nerdfont;
 mod ports;
+mod profile;
 mod prompt;
 mod remote;
 mod sandbox;
@@ -64,7 +65,9 @@ fn main() -> Result<()> {
         "workmux start"
     );
 
-    match cli::run() {
+    let result =
+        profile::check(config::Config::global_safety_profile(), &args).and_then(|()| cli::run());
+    match result {
         Ok(result) => {
             info!(
                 cwd = ?context.cwd,

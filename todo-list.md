@@ -139,7 +139,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 - Sprawdza stan w chwili uruchomienia, nie ciągle; agent może zmienić plik i cofnąć go przed sprawdzeniem.
 - Git uruchamiany przez utwardzony konstruktor workmux (bez hooków repo).
 
-**Następne kroki:** blokada `merge` przy zmianie chronionego pliku, wpis w audit logu, widok w dashboardzie, powiązanie z profilami bezpieczeństwa.
+**Następne kroki:** widok w dashboardzie, współdzielenie przez katalog team.
 
 ### 3.12 Blokada `workmux merge` przy zmianie chronionego pliku (opis szczegółowy)
 
@@ -159,6 +159,31 @@ Ograniczenia (uczciwie):
 - Nie obejmuje merge zdalnych workspace'ów ani merge przez sandbox/RPC.
 - Zablokowany merge zapisuje się w audit logu jako `merge blocked (protected files)` (ok=false), obok zwykłego wpisu `merge` (ok=false).
 
+### 3.13 Profile bezpieczeństwa `safety_profile` (opis szczegółowy)
+
+Cel: jednym ustawieniem ograniczyć, co workmux danego użytkownika w ogóle może zrobić. Dla nietechnicznych partnerów albo agentów z bypass permissions.
+
+Konfiguracja (globalny config danego użytkownika Linuxa, `~/.config/workmux/config.yaml`):
+```yaml
+safety_profile: review-only   # trusted (domyślnie) | safe | review-only
+```
+
+Krok po kroku:
+1. Przy starcie, przed wykonaniem jakiejkolwiek komendy, `main` czyta profil z globalnego configu i woła `profile::check` z pełnym argv.
+2. Komenda jest klasyfikowana tą samą funkcją co w audit logu (`audit::action_label`). Komendy tylko do odczytu (`list`, `status`, `hunk list/show` itd.) nigdy nie są blokowane.
+3. Reguły:
+   - `trusted`: bez ograniczeń (zachowanie jak dotąd).
+   - `safe`: blokuje `hunk discard|undo|amend|reword|fold|squash|move|split` (kasowanie pracy i przepisywanie historii) oraz `merge --allow-protected`. Zwykły `merge`, `remove`, `rebase`, `hunk stage|unstage|commit|commit-to` działają.
+   - `review-only`: wszystko z `safe` plus blokada `merge`, `remove` (też `rm`) i `rebase`. Można pracować (`add`, `send`, `run`, `hunk commit`), ale zmergować i usunąć worktree musi ktoś z profilem `trusted`.
+4. Zablokowana komenda kończy się błędem `'<komenda>' is not allowed under safety profile '<profil>'` i wpisem w audit logu `blocked by profile <profil>: <komenda>` (ok=false).
+5. Błędna wartość profilu w configu: cały config jest odrzucony przez parser, więc użyje się domyślnego `trusted` (patrz ograniczenia).
+
+Ograniczenia (uczciwie):
+- To NIE jest granica bezpieczeństwa wobec samego użytkownika: kto może edytować swój `~/.config/workmux/config.yaml`, zmieni sobie profil. Daje ochronę przed pomyłką i przed agentem, który nie dotyka configu, nie przed świadomym obejściem.
+- Agent z bypass permissions może wywołać gołego `git` (`git merge`, `git push`) z pominięciem workmux. Profil nie ogranicza surowego gita. Twarde wymuszenie wymaga uprawnień systemowych (np. protected branch na GitHubie, hook po stronie serwera, konfiguracja pliku przez roota).
+- Literówka lub błąd składni w configu daje cichy powrót do `trusted` (fail-open). Do rozważenia: fail-closed.
+- Blokuje tylko komendy workmux, nie `hunk` poza listą wyżej, i nie obejmuje zdalnych workspace'ów po stronie węzła (`node`).
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -168,6 +193,8 @@ Ograniczenia (uczciwie):
    - ✅ wpisy w audit logu: `guard violation` (gdy `workmux guard` coś znajdzie) i `merge blocked (protected files)`; tylko etykieta, bez nazw plików
    - ⬜ współdzielenie logu przez katalog team, widok w dashboardzie
 2. **Profile bezpieczeństwa** (`safe`, `review-only`, `trusted`): jednym ustawieniem określają tryb Claude, zakazane ścieżki i politykę git.
+   - ✅ `safety_profile` w globalnym configu: ograniczenia komend workmux (patrz 3.13)
+   - ⬜ powiązanie z `guard` (profil włącza/wyłącza `--allow-protected` automatycznie jest już zrobione), tryb Claude per profil, fail-closed przy błędnym configu, wymuszenie poza workmux (protected branch, hooki serwera)
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
@@ -217,4 +244,5 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | Wskaźnik błędów w dashboardzie | Wygląd `⚠ N` w nagłówku, zniknięcie po `workmux errors`, zachowanie na wąskim terminalu | Nie uruchamiałem dashboardu w tmux; brak testu jednostkowego (zależy od zmiennej środowiskowej) |
 | `workmux guard` | Ustaw w globalnym configu `guard: {protected_paths: [".env*"]}`, zmień `.env` w worktree (też bez commita) i uruchom `workmux guard`: ma wypisać branch i plik, kod wyjścia 2. Sprawdź też wzorzec ze `/` | Testy pokrywają tylko dopasowanie wzorców, nie git na prawdziwym repo |
 | `workmux merge` + guard | Z `guard.protected_paths: [".env*"]` zmień `.env` w worktree i uruchom `workmux merge`: ma odmówić z listą plików. Powtórz z `--allow-protected`: ma przejść. Sprawdź też merge bez zmian chronionych | Brak testu na prawdziwym repo, tylko kompilacja i istniejące testy |
+| `safety_profile` | W globalnym configu ustaw `safety_profile: review-only`. Sprawdź: `workmux merge x`, `workmux remove x`, `workmux hunk discard` mają odmówić; `workmux add`, `workmux list`, `workmux hunk commit` mają działać. Potem `safe` (blokuje tylko rewrite/discard i `merge --allow-protected`). Zajrzyj do `workmux audit` | Testy pokrywają tylko klasyfikację komend, nie przepływ na prawdziwym configu |
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |
