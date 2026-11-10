@@ -671,6 +671,12 @@ enum Commands {
         all: bool,
     },
 
+    /// Hunk-level git operations (list, stage, commit, commit-to) for agents
+    Hunk {
+        #[command(subcommand)]
+        command: HunkCommand,
+    },
+
     /// Show Claude plan usage limits (5h session and weekly windows)
     Usage {
         /// Output as JSON
@@ -1369,6 +1375,7 @@ pub fn run() -> Result<()> {
             git,
         } => command::status::run(&worktrees, json, all, git),
         Commands::Ports { json, all } => command::ports::run(json, all),
+        Commands::Hunk { command } => command::hunk::run(command),
         Commands::Usage {
             json,
             tmux,
@@ -2119,4 +2126,66 @@ mod tests {
         assert!(output.contains("__workmux_handles"));
         assert!(output.contains("__workmux_git_branches"));
     }
+}
+
+/// Subcommands of `workmux hunk`.
+#[derive(clap::Subcommand, Debug)]
+pub enum HunkCommand {
+    /// List hunks of the working-tree diff with stable IDs
+    List {
+        /// List staged hunks (git diff --cached)
+        #[arg(long)]
+        staged: bool,
+        /// Only hunks of this file
+        #[arg(long)]
+        file: Option<String>,
+        /// List hunks of a commit instead
+        #[arg(long, conflicts_with = "staged")]
+        commit: Option<String>,
+        /// Show every line with its hunk-relative number
+        #[arg(long)]
+        full: bool,
+    },
+    /// Show one hunk with line numbers
+    Show {
+        id: String,
+        /// Look the hunk up in this commit
+        #[arg(long)]
+        commit: Option<String>,
+    },
+    /// Stage hunks by ID
+    Stage {
+        ids: Vec<String>,
+        /// Hunk-relative line range (e.g. 5-30), single hunk only
+        #[arg(long, value_parser = crate::hunk::parse_line_range)]
+        lines: Option<(usize, usize)>,
+    },
+    /// Unstage hunks by ID
+    Unstage {
+        ids: Vec<String>,
+        #[arg(long, value_parser = crate::hunk::parse_line_range)]
+        lines: Option<(usize, usize)>,
+    },
+    /// Discard working-tree changes of hunks (not recoverable)
+    Discard {
+        ids: Vec<String>,
+        #[arg(long, value_parser = crate::hunk::parse_line_range)]
+        lines: Option<(usize, usize)>,
+    },
+    /// Commit hunks (IDs may carry ranges, e.g. abc1234:5-10)
+    Commit {
+        /// Commit message
+        #[arg(short, long)]
+        message: String,
+        ids: Vec<String>,
+    },
+    /// Commit hunks to another branch without checking it out
+    CommitTo {
+        /// Target branch
+        branch: String,
+        /// Commit message
+        #[arg(short, long)]
+        message: String,
+        ids: Vec<String>,
+    },
 }

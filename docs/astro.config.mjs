@@ -191,6 +191,7 @@ export default defineConfig({
             { label: "resurrect", slug: "reference/commands/resurrect" },
             { label: "sync-files", slug: "reference/commands/sync-files" },
             { label: "path", slug: "reference/commands/path" },
+            { label: "hunk", slug: "reference/commands/hunk" },
             { label: "ports", slug: "reference/commands/ports" },
             { label: "shell", slug: "reference/commands/shell" },
             { label: "dashboard", slug: "reference/commands/dashboard" },
