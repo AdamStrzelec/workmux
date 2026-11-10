@@ -35,11 +35,14 @@ of a hunk. Line numbers are the hunk-relative ones printed by `show` and
 
 - `commit` and `commit-to` refuse to run when the index already has staged
   changes.
-- `commit` restores the index if the commit fails (for example a hook).
+- `commit` restores the index if the commit fails .
 - `commit-to` builds the commit in a temporary index, so the target branch is
   not checked out. It refuses the branch you are on, updates the ref only if
   it has not moved, and then removes the hunks from the working tree.
 - `discard` throws the changes away and cannot be undone.
 - Git runs through workmux's hardened constructor: hooks, GPG signing and
   pagers are disabled, so `commit` skips pre-commit hooks and does not sign.
+- Because hooks are skipped, `commit` and `commit-to` refuse to write to a
+  protected branch themselves: `main`, `master` and the repository's default
+  branch. Work on a feature branch and merge after review.
 - Renames, copies and mode changes are not supported at hunk level.

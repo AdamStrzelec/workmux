@@ -51,6 +51,7 @@ fn repo() -> tempfile::TempDir {
     git(p, &["add", "."]);
     git(p, &["commit", "-qm", "init"]);
     git(p, &["branch", "other"]);
+    git(p, &["checkout", "-q", "-b", "work"]);
     let edited = std::fs::read_to_string(p.join("f.txt"))
         .unwrap()
         .replace("\n3\n", "\nthree\n")
@@ -134,9 +135,32 @@ fn commit_to_rejects_checked_out_branch() {
     let dir = repo();
     let p = dir.path();
     let ids = ids_for(p, "g.txt");
-    let out = hunk(p, &["commit-to", "main", "-m", "x", &ids[0]]);
+    let out = hunk(p, &["commit-to", "work", "-m", "x", &ids[0]]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("currently checked out"));
+}
+
+#[test]
+fn commit_refuses_on_main() {
+    let dir = repo();
+    let p = dir.path();
+    let ids = ids_for(p, "g.txt");
+    git(p, &["checkout", "-q", "main"]);
+    let out = hunk(p, &["commit", "-m", "x", &ids[0]]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("protected branch"));
+    assert_eq!(git(p, &["log", "-1", "--format=%s"]).trim(), "init");
+}
+
+#[test]
+fn commit_to_refuses_protected_target() {
+    let dir = repo();
+    let p = dir.path();
+    let ids = ids_for(p, "g.txt");
+    let out = hunk(p, &["commit-to", "main", "-m", "x", &ids[0]]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("protected branch"));
+    assert_eq!(git(p, &["log", "-1", "--format=%s", "main"]).trim(), "init");
 }
 
 #[test]

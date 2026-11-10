@@ -207,8 +207,34 @@ fn require_clean_index() -> Result<()> {
     Ok(())
 }
 
+/// Branches that hunk commits must never target: `main`, `master` and the repo's default branch.
+/// `hunk` runs git without hooks, so the check lives here instead of in a pre-commit hook.
+fn is_protected(branch: &str) -> bool {
+    if matches!(branch, "main" | "master") {
+        return true;
+    }
+    crate::git::get_default_branch().is_ok_and(|default| default == branch)
+}
+
+fn require_unprotected(branch: &str) -> Result<()> {
+    if is_protected(branch) {
+        anyhow::bail!(
+            "refusing to commit hunks to protected branch '{branch}'; \
+             work on a feature branch and merge after review"
+        );
+    }
+    Ok(())
+}
+
 /// Stage the selected hunks and commit them. Restores the index if the commit fails.
 pub fn commit(ids: &[String], message: &str) -> Result<()> {
+    let head = git_cmd()?
+        .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .output()
+        .context("failed to check current branch")?;
+    if head.status.success() {
+        require_unprotected(String::from_utf8_lossy(&head.stdout).trim())?;
+    }
     require_clean_index()?;
     let output = git_diff(false, None)?;
     let hunks = parse_diff(&output);
@@ -236,6 +262,7 @@ pub fn commit(ids: &[String], message: &str) -> Result<()> {
 /// Commit the selected working-tree hunks to another branch without checking it out,
 /// then remove them from the working tree.
 pub fn commit_to(branch: &str, ids: &[String], message: &str) -> Result<()> {
+    require_unprotected(branch)?;
     require_clean_index()?;
 
     let target_ref = format!("refs/heads/{branch}");
