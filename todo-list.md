@@ -228,6 +228,15 @@ Ograniczenia: bez treści rozmowy z agentem i bez przełączania okna tmux (czek
 
 Ograniczenia: bez limitu czasu i bez limitu rozmiaru diffu (cały diff idzie na stdin). To bramka ostrzegawcza, nie granica bezpieczeństwa: użytkownik albo agent z dostępem do configu lub surowego `git merge` ją omija. Działa tylko w `workmux merge` z CLI; merge z dashboardu/sidebaru i zdalny (`homecoming`) jej nie sprawdzają.
 
+### 3.18 Automatyczny snapshot przed `workmux send` (opis szczegółowy)
+
+1. Opcja `guard.snapshot_before_send: true` w globalnym configu (domyślnie wyłączona).
+2. Gdy włączona, `workmux send` przed wysłaniem promptu do lokalnego agenta zapisuje snapshot jego worktree z etykietą `before-send` (patrz 3.15) i wypisuje `snapshot saved: <id>` na stderr.
+3. Błąd snapshotu tylko ostrzega (`warning: snapshot before send failed`) i prompt i tak idzie, żeby nie blokować pracy.
+4. Odtwarzanie: `workmux snapshot list` i `restore <id>` w tym worktree.
+
+Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, prompty wpisane ręcznie w tmux i akcje z dashboardu nie robią snapshotu. Brak czyszczenia starych snapshotów, więc przy częstym `send` refy się namnażają. Na dużym repo każdy `send` trwa dłużej (skan plików).
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -248,7 +257,8 @@ Ograniczenia: bez limitu czasu i bez limitu rozmiaru diffu (cały diff idzie na 
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
 6. **Snapshot / szybki rollback worktree**, gdy agent coś zepsuje.
    - ✅ `workmux snapshot save [etykieta] | list [--json] | restore <id>` (patrz 3.15)
-   - ⬜ automatyczny snapshot przed `workmux send`/`run`, czyszczenie starych snapshotów, snapshot commitów (reset brancha)
+   - ✅ automatyczny snapshot przed `workmux send` (opcja `guard.snapshot_before_send`, patrz 3.18)
+   - ⬜ snapshot przed `run`, czyszczenie starych snapshotów, snapshot commitów (reset brancha)
 
 5. **Hunki w dashboardzie** ❌ odpuszczone (decyzja użytkownika, niepotrzebne w UI): dashboard ma już tryb patch (staging hunk po hunku, split, undo) w `src/command/dashboard/diff_ops.rs`, więc pełny podgląd i staging w TUI byłby duplikatem. Zostaje do decyzji wąski zakres: liczba niezacommitowanych hunków per worktree w liście oraz oznaczenie chronionej gałęzi.
 
@@ -298,5 +308,6 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `workmux collisions` | Zmień ten sam plik w dwóch worktree i uruchom: ma wypisać `file ...`, kod wyjścia 2. Z `team.dir` i dwoma użytkownikami na tym samym branchu ma wypisać `branch ...` | Testy pokrywają tylko logikę łączenia; na realnym repo sprawdzony tylko przypadek bez kolizji |
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |
 | `guard.review_command` | Wpisz w global config `guard: {review_command: "cat >/dev/null; exit 1"}` i `workmux merge` ma odmówić; potem `exit 0` i `--skip-review`. Sprawdź prawdziwą komendę z LLM, duży diff, merge z dashboardu (nie powinien jej uruchamiać) | Sprawdzone tylko testem jednostkowym wywołania komendy; nie e2e |
+| `guard.snapshot_before_send` | Włącz w global config, wyślij `workmux send <agent> \"...\"` do lokalnego agenta; sprawdź `snapshot saved: ...` i `snapshot list`. Zmierz czas na dużym repo | Niesprawdzone z prawdziwym agentem; tylko build i testy |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |

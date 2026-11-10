@@ -20,6 +20,10 @@ pub struct GuardConfig {
     /// environment; a non-zero exit blocks the merge.
     #[serde(default)]
     pub review_command: Option<String>,
+    /// Save a snapshot of the target worktree before `workmux send` hands a
+    /// prompt to a local agent, so a bad run can be undone.
+    #[serde(default)]
+    pub snapshot_before_send: bool,
 }
 
 const OPTS: MatchOptions = MatchOptions {
@@ -151,6 +155,7 @@ mod tests {
         GuardConfig {
             protected_paths: p.iter().map(|s| s.to_string()).collect(),
             review_command: None,
+            snapshot_before_send: false,
         }
     }
 
