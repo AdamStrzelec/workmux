@@ -19,7 +19,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 ## 2. Kolejność prac (ustalona)
 
 1. Stan, tokeny i alerty ✅
-2. Współdzielony stan między użytkownikami Linuksa 🔜 (`workmux team`: snapshoty w katalogu `team.dir`; zostaje publikacja automatyczna, aktywne okno, przełączanie)
+2. Współdzielony stan między użytkownikami Linuksa 🔜 (`workmux team`: snapshoty w katalogu `team.dir`; ✅ publikacja automatyczna z dashboardu i filtr prywatności; zostaje aktywne okno i przełączanie)
 3. Bezpieczeństwo: profile, audit log, git-surgeon, polityki git ⬜
 4. Reszta: consult-llm, claude-history, porty/dev server, task manager ⬜
 
@@ -114,7 +114,8 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `hunk` (całość) | Praca w `dev-forge` z prawdziwym agentem | Testy tylko na tymczasowych repo |
 | Zainstalowana binarka | `cargo install --path .` i test nowych komend w `dev-forge` | Binarka w `~/.cargo/bin` jest starsza niż commity |
 | `workmux team` | Dwóch prawdziwych użytkowników Linuksa, wspólna grupa, katalog `chmod 2775`, odczyt i zapis plików | Test tylko na jednym użytkowniku i sztucznym pliku |
-| `workmux team` | Prywatność: tytuły paneli i wszystkie projekty są widoczne dla wspólników | Decyzja o filtrze jeszcze nie podjęta |
+| `workmux team` | Prywatność: tytuły paneli i wszystkie projekty są widoczne dla wspólników | Filtr gotowy: tytuły domyślnie ukryte, `exclude_projects`; sprawdzić na żywo |
+| `workmux team` | Auto-publikacja z dashboardu co 60 s (wątek w tle) | Niesprawdzone w prawdziwym tmux; wymaga ustawionego `team.dir` |
 | Alerty użycia | Komunikaty tmux przez prawdziwe SSH na innego hosta/usera | Brak drugiego hosta |
 | Alerty użycia | Etykieta powiadomień macOS („Terminal”) | Tylko opcjonalna poprawka |
 | `workmux usage` | Odczyt tokena na Linuksie (`~/.claude/.credentials.json`, `CLAUDE_CONFIG_DIR`) | Sprawdzone tylko na macOS (Keychain) |

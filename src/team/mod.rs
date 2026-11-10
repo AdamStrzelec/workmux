@@ -24,6 +24,19 @@ pub struct TeamConfig {
     /// Snapshots older than this are shown as stale.
     #[serde(default = "default_stale_secs")]
     pub stale_after_secs: u64,
+    /// Publish automatically from the dashboard (once a minute).
+    #[serde(default = "default_true")]
+    pub auto_publish: bool,
+    /// Share pane titles (they often contain prompt summaries). Off by default.
+    #[serde(default)]
+    pub share_titles: bool,
+    /// Project names that are never published.
+    #[serde(default)]
+    pub exclude_projects: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_stale_secs() -> u64 {
@@ -148,6 +161,50 @@ pub fn age(now: u64, then: u64) -> String {
     }
 }
 
+/// `<project>` from `.../<project>__worktrees/<name>`, else the parent dir name.
+fn project_of(path: &std::path::Path) -> String {
+    let parent = path.parent().and_then(|p| p.file_name());
+    let parent = parent.map(|p| p.to_string_lossy().into_owned());
+    match parent {
+        Some(p) => p
+            .strip_suffix("__worktrees")
+            .map(str::to_string)
+            .unwrap_or(p),
+        None => String::new(),
+    }
+}
+
+pub fn entry_of(pane: &crate::multiplexer::AgentPane) -> Entry {
+    Entry {
+        project: project_of(&pane.path),
+        worktree: pane
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        branch: crate::git::get_current_branch_in(&pane.path).unwrap_or_default(),
+        status: pane.status.map_or("-", |s| s.name()).to_string(),
+        session: pane.session.clone(),
+        window: pane.window_name.clone(),
+        title: pane.pane_title.clone(),
+        activity_ts: pane.activity_ts,
+    }
+}
+
+/// Apply the privacy settings: drop excluded projects, hide titles unless allowed.
+pub fn apply_privacy(cfg: &TeamConfig, entries: Vec<Entry>) -> Vec<Entry> {
+    entries
+        .into_iter()
+        .filter(|e| !cfg.exclude_projects.iter().any(|p| p == &e.project))
+        .map(|mut e| {
+            if !cfg.share_titles {
+                e.title = None;
+            }
+            e
+        })
+        .collect()
+}
+
 pub fn new_snapshot(cfg: &TeamConfig, agents: Vec<Entry>, now: u64) -> Snapshot {
     Snapshot {
         user: resolve_user(cfg),
@@ -180,6 +237,29 @@ mod tests {
         assert_eq!(sanitize_name("..."), "unknown");
         assert_eq!(sanitize_name(""), "unknown");
         assert_eq!(sanitize_name("ania.k"), "ania.k");
+    }
+
+    #[test]
+    fn privacy_filters_projects_and_titles() {
+        let mut a = entry("x");
+        a.title = Some("secret prompt".into());
+        let mut b = entry("y");
+        b.project = "private".into();
+        let cfg = TeamConfig {
+            exclude_projects: vec!["private".into()],
+            ..Default::default()
+        };
+        let out = apply_privacy(&cfg, vec![a.clone(), b]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].title, None);
+        let cfg = TeamConfig {
+            share_titles: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            apply_privacy(&cfg, vec![a]).remove(0).title.as_deref(),
+            Some("secret prompt")
+        );
     }
 
     #[test]

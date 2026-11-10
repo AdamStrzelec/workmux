@@ -116,6 +116,35 @@ impl App {
         });
     }
 
+    /// Publish this user's agents to the shared team dir (no-op unless configured).
+    pub(super) fn spawn_team_publish(&self) {
+        let cfg = crate::config::Config::global_team_config();
+        if !cfg.auto_publish || cfg.dir.as_deref().is_none_or(str::is_empty) {
+            return;
+        }
+        let agents: Vec<_> = self
+            .all_agents
+            .iter()
+            .filter(|a| a.remote.is_none())
+            .cloned()
+            .collect();
+        std::thread::spawn(move || {
+            let Ok(dir) = crate::team::resolve_dir(&cfg) else {
+                return;
+            };
+            let entries = agents.iter().map(crate::team::entry_of).collect();
+            let entries = crate::team::apply_privacy(&cfg, entries);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let snap = crate::team::new_snapshot(&cfg, entries, now);
+            if let Err(e) = crate::team::write_snapshot(&dir, &snap) {
+                tracing::debug!("team publish failed: {e:#}");
+            }
+        });
+    }
+
     /// Spawn a background thread to fetch GitHub status for all repos.
     /// Returns true if a fetch was started, false if one is already in progress.
     pub(super) fn spawn_pr_status_fetch(&self) -> bool {

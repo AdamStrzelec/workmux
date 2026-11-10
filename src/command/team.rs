@@ -5,46 +5,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 
 use crate::config::Config;
-use crate::git;
-use crate::multiplexer::{AgentPane, create_backend, detect_backend_strict};
+use crate::multiplexer::{create_backend, detect_backend_strict};
 use crate::state::StateStore;
-use crate::team::{self, Entry, Snapshot};
+use crate::team::{self, Entry, Snapshot, entry_of};
 
 fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
-}
-
-/// `<project>` from `.../<project>__worktrees/<name>`, else the parent dir name.
-fn project_of(path: &std::path::Path) -> String {
-    let parent = path.parent().and_then(|p| p.file_name());
-    let parent = parent.map(|p| p.to_string_lossy().into_owned());
-    match parent {
-        Some(p) => p
-            .strip_suffix("__worktrees")
-            .map(str::to_string)
-            .unwrap_or(p),
-        None => String::new(),
-    }
-}
-
-fn entry_of(pane: &AgentPane) -> Entry {
-    Entry {
-        project: project_of(&pane.path),
-        worktree: pane
-            .path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        branch: git::get_current_branch_in(&pane.path).unwrap_or_default(),
-        status: pane.status.map_or("-", |s| s.name()).to_string(),
-        session: pane.session.clone(),
-        window: pane.window_name.clone(),
-        title: pane.pane_title.clone(),
-        activity_ts: pane.activity_ts,
-    }
 }
 
 fn local_entries() -> Result<Vec<Entry>> {
@@ -60,7 +29,7 @@ pub fn run(json: bool, no_publish: bool) -> Result<()> {
     let now = now();
 
     if !no_publish {
-        let snap = team::new_snapshot(&cfg, local_entries()?, now);
+        let snap = team::new_snapshot(&cfg, team::apply_privacy(&cfg, local_entries()?), now);
         team::write_snapshot(&dir, &snap)?;
     }
     let snaps = team::read_snapshots(&dir)?;

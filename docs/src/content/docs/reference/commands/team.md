@@ -25,6 +25,9 @@ team:
   dir: /var/lib/workmux
   name: ania # optional, defaults to $USER
   stale_after_secs: 300 # optional
+  auto_publish: true # dashboard publishes once a minute (default true)
+  share_titles: false # pane titles may hold prompt text (default false)
+  exclude_projects: [] # project names never published
 ```
 
 The `team` section is read from the global config only.

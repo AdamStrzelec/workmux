@@ -475,6 +475,7 @@ impl App {
         if self.last_usage_fetch.elapsed() >= USAGE_FETCH_INTERVAL {
             self.last_usage_fetch = std::time::Instant::now();
             self.spawn_usage_fetch();
+            self.spawn_team_publish();
             self.unseen_errors = crate::errlog::unseen_panics();
         }
 
