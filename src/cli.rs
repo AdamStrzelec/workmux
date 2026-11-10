@@ -1,5 +1,6 @@
 use crate::command::args::{MultiArgs, PlacementArgs, PromptArgs, RescueArgs, SetupFlags};
 use crate::config::{MuxMode, SidebarHeight, SidebarPosition, SidebarWidth};
+use crate::multiplexer::AgentStatus;
 use crate::workflow::pr::{Forge, PrReference};
 use crate::{claude, command, config, git, nerdfont};
 use anyhow::{Context, Result};
@@ -203,7 +204,7 @@ Worktree lifecycle:
 
 Monitoring:
   dashboard    Show a TUI dashboard of all active workmux agents
-  sidebar      Toggle a live agent status sidebar in tmux
+  sidebar      Toggle a live agent status sidebar in tmux or Zellij
   list         List all worktrees [ls]
   path         Get the filesystem path of a worktree
   status       Query agent status for worktrees
@@ -393,6 +394,10 @@ enum Commands {
 
     /// Open a tmux window for an existing worktree
     Open {
+        /// Open without switching to the window or session
+        #[arg(short = 'b', long)]
+        background: bool,
+
         /// Worktree name(s) (directory name, visible in tmux window). Optional with --new.
         #[arg(value_parser = WorktreeHandleParser::new(), required_unless_present = "new")]
         names: Vec<String>,
@@ -567,8 +572,16 @@ enum Commands {
     },
 
     /// Send a prompt or instruction to a running agent
+    ///
+    /// Nothing is sent to an agent waiting on a dialog, which the input
+    /// would answer, or to a worktree with several agents; target one of
+    /// those by pane ID. Failures print a stable error name and exit with
+    /// its code: agent_waiting (3), ambiguous_target (4), agent_not_found
+    /// (5), send_stalled (6), agent_gone (7), agent_status_unknown (8),
+    /// timeout (124).
     Send {
-        /// Worktree name (supports cross-project with project:handle syntax)
+        /// Worktree name (supports cross-project with project:handle
+        /// syntax), or an agent's pane ID
         #[arg(value_parser = AgentTargetParser::new())]
         name: String,
 
@@ -579,6 +592,25 @@ enum Commands {
         /// Read prompt from file
         #[arg(short, long, conflicts_with = "text")]
         file: Option<String>,
+
+        /// Confirm the agent acted on the prompt, then wait for an --until
+        /// status. An agent that was not working must show activity within
+        /// 5 seconds (send_stalled)
+        #[arg(long)]
+        wait: bool,
+
+        /// Statuses that end --wait, comma-separated [default: done,waiting]
+        #[arg(
+            long,
+            requires = "wait",
+            value_delimiter = ',',
+            value_parser = ["working", "waiting", "done"]
+        )]
+        until: Vec<String>,
+
+        /// Give up --wait after this many seconds (exit 124)
+        #[arg(long, requires = "wait")]
+        timeout: Option<u64>,
     },
 
     /// Open a shell in a remote workspace, in this terminal
@@ -599,7 +631,8 @@ enum Commands {
 
     /// Capture terminal output from a running agent
     Capture {
-        /// Worktree name (supports cross-project with project:handle syntax)
+        /// Worktree name (supports cross-project with project:handle
+        /// syntax), or an agent's pane ID
         #[arg(value_parser = AgentTargetParser::new())]
         name: String,
 
@@ -744,9 +777,9 @@ enum Commands {
     /// Update workmux to the latest version
     Update,
 
-    /// Control a live agent status sidebar in tmux
+    /// Control a live agent status sidebar in tmux or Zellij
     Sidebar {
-        /// Scope sidebar to this session, or toggle this session off when global sidebar is active
+        /// Scope tmux to this session; Zellij is always scoped to its current session
         #[arg(short = 's', long)]
         session: bool,
 
@@ -761,15 +794,15 @@ enum Commands {
     #[command(hide = true, name = "_sidebar-run")]
     SidebarRun,
 
-    /// Sync sidebar into a window (internal use, called by tmux hooks)
+    /// Sync sidebar into a window (internal use)
     #[command(hide = true, name = "_sidebar-sync")]
     SidebarSync {
-        /// Target window ID (from tmux hook context)
+        /// Target window ID
         #[arg(long)]
         window: Option<String>,
     },
 
-    /// Reflow sidebar layout after window resize (internal use, called by tmux hooks)
+    /// Reflow sidebar layout after window resize (internal use)
     #[command(hide = true, name = "_sidebar-reflow")]
     SidebarReflow {
         /// Target window ID
@@ -1206,6 +1239,7 @@ pub fn run() -> Result<()> {
             )
         }
         Commands::Open {
+            background,
             names,
             run_hooks,
             force_files,
@@ -1223,6 +1257,7 @@ pub fn run() -> Result<()> {
                 .or(session.then_some(MuxMode::Session));
             command::open::run(
                 &names,
+                background,
                 run_hooks,
                 force_files,
                 new,
@@ -1284,8 +1319,30 @@ pub fn run() -> Result<()> {
             reject_remote("path", [&name])?;
             command::path::run(&name)
         }
-        Commands::Send { name, text, file } => {
-            command::send::run(&name, text.as_deref(), file.as_deref())
+        Commands::Send {
+            name,
+            text,
+            file,
+            wait,
+            until,
+            timeout,
+        } => {
+            let wait = if wait {
+                Some(command::send::WaitFor {
+                    until: if until.is_empty() {
+                        vec![AgentStatus::Done, AgentStatus::Waiting]
+                    } else {
+                        until
+                            .iter()
+                            .map(|status| command::wait::parse_status(status))
+                            .collect::<Result<_>>()?
+                    },
+                    timeout: timeout.map(std::time::Duration::from_secs),
+                })
+            } else {
+                None
+            };
+            command::send::run(&name, text.as_deref(), file.as_deref(), wait)
         }
         Commands::Shell { name, host } => command::shell::run(name.as_deref(), host),
         Commands::Capture { name, lines } => command::capture::run(&name, lines),

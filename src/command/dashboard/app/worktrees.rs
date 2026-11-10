@@ -191,14 +191,21 @@ fn run_add_worktree_job(
     }
 }
 
+fn worktree_context(
+    path: &Path,
+    mux: Arc<dyn Multiplexer>,
+) -> anyhow::Result<workflow::WorkflowContext> {
+    let (config, config_location) = crate::config::Config::load_with_location_from(path, None)?;
+    workflow::WorkflowContext::new_in(path, config, mux, config_location)
+}
+
 fn remove_worktree(
     handle: &str,
     path: &Path,
     keep_branch: bool,
     mux: Arc<dyn Multiplexer>,
 ) -> anyhow::Result<workflow::types::RemoveResult> {
-    let (config, config_location) = crate::config::Config::load_with_location_from(path, None)?;
-    let ctx = workflow::WorkflowContext::new_in(path, config, mux, config_location)?;
+    let ctx = worktree_context(path, mux)?;
     workflow::remove_quiet(handle, true, keep_branch, &ctx)
 }
 
@@ -1026,10 +1033,9 @@ impl App {
         // dashboard's CWD: a tmux popup starts in the session directory, which
         // may be outside the repository.
         let result = (|| -> anyhow::Result<()> {
-            let (config, config_location) =
-                crate::config::Config::load_with_location_from(&path, None)?;
+            let ctx = worktree_context(&path, self.mux.clone())?;
             let mut options = workflow::types::SetupOptions::new(false, false, true);
-            options.mode = config.mode();
+            options.mode = ctx.config.mode();
             // A closed window is (re)created in the session the dashboard was
             // launched from, so it shows up where the user is instead of in a
             // previously remembered session. An open window is left alone and
@@ -1038,12 +1044,6 @@ impl App {
             if options.mode == crate::config::MuxMode::Window && !has_window {
                 options.window_session_name = self.launch_session.clone();
             }
-            let ctx = workflow::WorkflowContext::new_in(
-                &path,
-                config,
-                self.mux.clone(),
-                config_location,
-            )?;
             let created_in = options.window_session_name.clone();
             let result = workflow::open(&handle, &ctx, options, false, None, None, None)?;
             // With an explicit parent session, window setup only selects the
@@ -1061,6 +1061,7 @@ impl App {
 
         match result {
             Ok(()) => {
+                self.trigger_worktree_refetch();
                 if self.should_close_after_jump() {
                     self.should_jump = true;
                 }
@@ -1556,6 +1557,28 @@ mod tests {
             created_at: None,
             base_branch: None,
         }
+    }
+
+    #[test]
+    fn worktree_context_uses_selected_repository_and_config() {
+        let repo = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new("git")
+            .args(["init", "--initial-branch=main"])
+            .arg(repo.path())
+            .output()
+            .unwrap();
+        assert!(status.status.success());
+        std::fs::write(
+            repo.path().join(".workmux.yaml"),
+            "main_branch: main\nwindow_prefix: selected-\n",
+        )
+        .unwrap();
+        let mux = crate::multiplexer::create_backend(crate::multiplexer::BackendType::Tmux);
+        let ctx = worktree_context(repo.path(), mux).unwrap();
+        assert_eq!(ctx.execution_dir, repo.path().canonicalize().unwrap());
+        assert_eq!(ctx.main_worktree_root, ctx.execution_dir);
+        assert_eq!(ctx.prefix, "selected-");
+        assert_eq!(ctx.config_source_dir, ctx.execution_dir);
     }
 
     fn pr(number: u32) -> PrSummary {
