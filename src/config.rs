@@ -1054,6 +1054,10 @@ pub struct Config {
     #[serde(default)]
     pub team: crate::team::TeamConfig,
 
+    /// Protected paths (`workmux guard`). Global config only.
+    #[serde(default)]
+    pub guard: crate::guard::GuardConfig,
+
     /// Whether to use nerdfont icons (None = prompt user on first run)
     #[serde(default)]
     pub nerdfont: Option<bool>,
@@ -3207,6 +3211,15 @@ impl Config {
             .ok()
             .flatten()
             .map(|c| c.team)
+            .unwrap_or_default()
+    }
+
+    /// `guard` section of the global config; defaults when absent or invalid.
+    pub fn global_guard_config() -> crate::guard::GuardConfig {
+        Self::load_global()
+            .ok()
+            .flatten()
+            .map(|c| c.guard)
             .unwrap_or_default()
     }
 

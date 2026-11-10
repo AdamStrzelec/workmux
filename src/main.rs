@@ -18,6 +18,7 @@ mod git;
 mod github;
 mod gitlab;
 mod global_init;
+mod guard;
 mod hunk;
 mod llm;
 mod logger;
