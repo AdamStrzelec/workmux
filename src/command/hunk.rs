@@ -26,6 +26,36 @@ pub fn run(command: HunkCommand) -> Result<()> {
             message,
             allow_pushed,
         } => hunk::reword(&commit, &message, allow_pushed),
+        HunkCommand::Fold {
+            target,
+            from,
+            allow_pushed,
+        } => hunk::fold(&target, &from, allow_pushed),
+        HunkCommand::Squash {
+            commit,
+            message,
+            force,
+            no_preserve_author,
+            allow_pushed,
+        } => hunk::squash(&commit, &message, force, !no_preserve_author, allow_pushed),
+        HunkCommand::Move {
+            commit,
+            after,
+            before,
+            to_end,
+            allow_pushed,
+        } => {
+            let to = match (&after, &before, to_end) {
+                (Some(r), _, _) => hunk::MoveTo::After(r),
+                (_, Some(r), _) => hunk::MoveTo::Before(r),
+                (_, _, true) => hunk::MoveTo::End,
+                _ => anyhow::bail!("one of --after, --before or --to-end is required"),
+            };
+            hunk::move_commit(&commit, to, allow_pushed)
+        }
+        HunkCommand::Split { commit, args } => {
+            hunk::split(&commit, &hunk::parse_split_args(&args)?)
+        }
         HunkCommand::Commit { message, ids } => hunk::commit(&ids, &message),
         HunkCommand::CommitTo {
             branch,

@@ -420,3 +420,189 @@ fn undo_reverse_applies_a_hunk_of_an_earlier_commit() {
     let bad = hunk(p, &["undo", "deadbee", "--from", "HEAD~1"]);
     assert!(!bad.status.success());
 }
+
+fn ok(out: &std::process::Output) {
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn squash_combines_commits_and_keeps_oldest_author() {
+    let dir = history_repo();
+    let p = dir.path();
+    let tree = git(p, &["rev-parse", "HEAD^{tree}"]);
+    git(p, &["config", "user.name", "someone else"]);
+    ok(&hunk(
+        p,
+        &["squash", "HEAD~1", "-m", "two and three", "-m", "body"],
+    ));
+    assert_eq!(subjects(p), ["two and three", "one"]);
+    assert_eq!(git(p, &["rev-parse", "HEAD^{tree}"]), tree);
+    assert_eq!(git(p, &["log", "-1", "--format=%an"]).trim(), "t");
+    assert_eq!(git(p, &["log", "-1", "--format=%b"]).trim(), "body");
+    let out = hunk(p, &["squash", "HEAD", "-m", "x"]);
+    assert!(!out.status.success());
+}
+
+#[test]
+fn fold_moves_commits_into_an_earlier_one() {
+    let dir = history_repo();
+    let p = dir.path();
+    let one = git(p, &["rev-parse", "HEAD~2"]).trim().to_string();
+    let tree = git(p, &["rev-parse", "HEAD^{tree}"]);
+    ok(&hunk(p, &["fold", &one]));
+    assert_eq!(subjects(p), ["two", "one"]);
+    assert_eq!(git(p, &["rev-parse", "HEAD^{tree}"]), tree);
+    assert!(git(p, &["show", "--stat", "--format=", "HEAD~1"]).contains("three.txt"));
+}
+
+#[test]
+fn fold_with_from_picks_a_middle_commit() {
+    let dir = history_repo();
+    let p = dir.path();
+    let one = git(p, &["rev-parse", "HEAD~2"]).trim().to_string();
+    let two = git(p, &["rev-parse", "HEAD~1"]).trim().to_string();
+    ok(&hunk(p, &["fold", &one, "--from", &two]));
+    assert_eq!(subjects(p), ["three", "one"]);
+}
+
+#[test]
+fn move_reorders_commits() {
+    let dir = history_repo();
+    let p = dir.path();
+    let one = git(p, &["rev-parse", "HEAD~2"]).trim().to_string();
+    ok(&hunk(p, &["move", &one, "--to-end"]));
+    assert_eq!(subjects(p), ["one", "three", "two"]);
+    let three = git(p, &["rev-parse", "HEAD~1"]).trim().to_string();
+    let two = git(p, &["rev-parse", "HEAD~2"]).trim().to_string();
+    ok(&hunk(p, &["move", &three, "--before", &two]));
+    assert_eq!(subjects(p), ["one", "two", "three"]);
+}
+
+/// History repo whose last commits change two separate regions of one file.
+fn split_repo() -> tempfile::TempDir {
+    let dir = history_repo();
+    let p = dir.path();
+    let numbers: String = (1..=40).map(|n| format!("{n}\n")).collect();
+    std::fs::write(p.join("n.txt"), &numbers).unwrap();
+    git(p, &["add", "."]);
+    git(p, &["commit", "-qm", "add n"]);
+    let edited = numbers
+        .replace("\n3\n", "\nthree\n")
+        .replace("\n30\n", "\nthirty\n");
+    std::fs::write(p.join("n.txt"), edited).unwrap();
+    std::fs::write(p.join("new.txt"), "brand new\n").unwrap();
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "big change"]);
+    std::fs::write(p.join("later.txt"), "later\n").unwrap();
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "later"]);
+    dir
+}
+
+fn first_id(p: &std::path::Path, rev: &str) -> String {
+    let listing = stdout(&hunk(p, &["list", "--commit", rev, "--file", "n.txt"]));
+    listing.split_whitespace().next().unwrap().to_string()
+}
+
+#[test]
+fn split_head_creates_picked_commit_and_rest() {
+    let dir = split_repo();
+    let p = dir.path();
+    git(p, &["reset", "-q", "--hard", "HEAD~1"]);
+    let tree = git(p, &["rev-parse", "HEAD^{tree}"]);
+    let id = first_id(p, "HEAD");
+    ok(&hunk(
+        p,
+        &[
+            "split",
+            "HEAD",
+            "--pick",
+            &id,
+            "-m",
+            "first region",
+            "--rest-message",
+            "the rest",
+        ],
+    ));
+    assert_eq!(subjects(p)[..2], ["the rest", "first region"]);
+    assert_eq!(
+        git(p, &["rev-parse", "HEAD^{tree}"]),
+        tree,
+        "final tree unchanged"
+    );
+    let first = git(p, &["show", "HEAD~1:n.txt"]);
+    assert!(
+        first.contains("\nthree\n") && !first.contains("thirty"),
+        "{first}"
+    );
+    assert!(git(p, &["status", "--short"]).is_empty());
+}
+
+#[test]
+fn split_older_commit_replays_later_commits() {
+    let dir = split_repo();
+    let p = dir.path();
+    let big = git(p, &["rev-parse", "HEAD~1"]).trim().to_string();
+    let tree = git(p, &["rev-parse", "HEAD^{tree}"]);
+    let id = first_id(p, &big);
+    ok(&hunk(
+        p,
+        &["split", &big, "--pick", &id, "-m", "first region"],
+    ));
+    assert_eq!(subjects(p)[..3], ["later", "big change", "first region"]);
+    assert_eq!(git(p, &["rev-parse", "HEAD^{tree}"]), tree);
+}
+
+#[test]
+fn split_with_line_ranges_across_groups() {
+    let dir = split_repo();
+    let p = dir.path();
+    let big = git(p, &["rev-parse", "HEAD~1"]).trim().to_string();
+    let tree = git(p, &["rev-parse", "HEAD^{tree}"]);
+    let id = first_id(p, &big);
+    let shown = stdout(&hunk(p, &["show", &id, "--commit", &big]));
+    assert!(shown.contains("-3") && shown.contains("+three"), "{shown}");
+    let minus = shown
+        .lines()
+        .find(|l| l.ends_with(":-3"))
+        .unwrap()
+        .split(':')
+        .next()
+        .unwrap()
+        .trim()
+        .to_string();
+    ok(&hunk(
+        p,
+        &[
+            "split",
+            &big,
+            "--pick",
+            &format!("{id}:{minus}"),
+            "-m",
+            "remove 3",
+            "--pick",
+            &id,
+            "-m",
+            "add three",
+        ],
+    ));
+    assert_eq!(
+        subjects(p)[..4],
+        ["later", "big change", "add three", "remove 3"]
+    );
+    assert_eq!(git(p, &["rev-parse", "HEAD^{tree}"]), tree);
+}
+
+#[test]
+fn split_rejects_unknown_hunk_without_touching_history() {
+    let dir = split_repo();
+    let p = dir.path();
+    let head = git(p, &["rev-parse", "HEAD"]);
+    let out = hunk(p, &["split", "HEAD~1", "--pick", "deadbee", "-m", "x"]);
+    assert!(!out.status.success());
+    assert_eq!(git(p, &["rev-parse", "HEAD"]), head);
+}

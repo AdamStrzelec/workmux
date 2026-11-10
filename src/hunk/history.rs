@@ -8,11 +8,11 @@ use anyhow::{Context, Result};
 use super::diff::{git_cmd, run_git};
 use super::ops::{is_protected, require_clean_index};
 
-fn git_out(args: &[&str]) -> Result<String> {
+pub(super) fn git_out(args: &[&str]) -> Result<String> {
     Ok(run_git(git_cmd()?.args(args))?.trim().to_string())
 }
 
-fn rebase_in_progress() -> Result<bool> {
+pub(super) fn rebase_in_progress() -> Result<bool> {
     let dir = git_out(&["rev-parse", "--git-dir"])?;
     let dir = std::path::Path::new(&dir);
     Ok(["rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD"]
@@ -20,7 +20,7 @@ fn rebase_in_progress() -> Result<bool> {
         .any(|name| dir.join(name).exists()))
 }
 
-fn has_staged_changes() -> Result<bool> {
+pub(super) fn has_staged_changes() -> Result<bool> {
     let status = git_cmd()?
         .args(["diff", "--cached", "--quiet"])
         .status()
@@ -29,7 +29,11 @@ fn has_staged_changes() -> Result<bool> {
 }
 
 /// Resolve `commit` and check that rewriting it is safe. Returns its full SHA.
-fn resolve_rewrite_target(commit: &str, allow_pushed: bool) -> Result<String> {
+pub(super) fn resolve_rewrite_target(
+    commit: &str,
+    allow_pushed: bool,
+    allow_merges: bool,
+) -> Result<String> {
     if rebase_in_progress()? {
         anyhow::bail!("a rebase or cherry-pick is in progress; finish or abort it first");
     }
@@ -56,7 +60,7 @@ fn resolve_rewrite_target(commit: &str, allow_pushed: bool) -> Result<String> {
     if !is_ancestor.success() {
         anyhow::bail!("{commit} is not an ancestor of HEAD");
     }
-    if !git_out(&["rev-list", "--merges", &format!("{sha}..HEAD")])?.is_empty() {
+    if !allow_merges && !git_out(&["rev-list", "--merges", &format!("{sha}..HEAD")])?.is_empty() {
         anyhow::bail!(
             "there are merge commits between {commit} and HEAD; rebase would flatten them"
         );
@@ -70,7 +74,7 @@ fn resolve_rewrite_target(commit: &str, allow_pushed: bool) -> Result<String> {
     Ok(sha)
 }
 
-fn short(sha: &str) -> &str {
+pub(super) fn short(sha: &str) -> &str {
     &sha[..7.min(sha.len())]
 }
 
@@ -108,13 +112,13 @@ fn autosquash(target: &str, what: &str) -> Result<()> {
     anyhow::bail!("rebase failed: {}", stderr.trim())
 }
 
-fn commits_after(sha: &str) -> Result<usize> {
+pub(super) fn commits_after(sha: &str) -> Result<usize> {
     git_out(&["rev-list", "--count", &format!("{sha}..HEAD")])?
         .parse()
         .context("unexpected rev-list output")
 }
 
-fn describe_at(distance: usize, verb: &str) {
+pub(super) fn describe_at(distance: usize, verb: &str) {
     let spec = if distance == 0 {
         "HEAD".to_string()
     } else {
@@ -125,7 +129,7 @@ fn describe_at(distance: usize, verb: &str) {
     }
 }
 
-fn commit_checked(args: &[&str], failure: &str) -> Result<()> {
+pub(super) fn commit_checked(args: &[&str], failure: &str) -> Result<()> {
     let output = git_cmd()?
         .args(args)
         .output()
@@ -145,7 +149,7 @@ pub fn amend(commit: &str, allow_pushed: bool) -> Result<()> {
     if !has_staged_changes()? {
         anyhow::bail!("no staged changes to amend; stage hunks first ('workmux hunk stage')");
     }
-    let target = resolve_rewrite_target(commit, allow_pushed)?;
+    let target = resolve_rewrite_target(commit, allow_pushed, false)?;
     let distance = commits_after(&target)?;
     if distance == 0 {
         commit_checked(
@@ -169,7 +173,7 @@ pub fn reword(commit: &str, message: &[String], allow_pushed: bool) -> Result<()
         anyhow::bail!("no message given; use -m");
     }
     require_clean_index()?;
-    let target = resolve_rewrite_target(commit, allow_pushed)?;
+    let target = resolve_rewrite_target(commit, allow_pushed, false)?;
     let message = message.join("\n\n");
     let distance = commits_after(&target)?;
     if distance == 0 {

@@ -2211,6 +2211,58 @@ pub enum HunkCommand {
         #[arg(long)]
         allow_pushed: bool,
     },
+    /// Fold existing commits (default: HEAD) into an earlier commit
+    Fold {
+        /// Commit that receives the changes
+        target: String,
+        /// Commits to fold in (default: HEAD)
+        #[arg(long, num_args = 1..)]
+        from: Vec<String>,
+        /// Allow rewriting commits that are already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Combine COMMIT through HEAD into a single commit
+    Squash {
+        commit: String,
+        /// New message; repeat for subject and body paragraphs
+        #[arg(short, long, required = true)]
+        message: Vec<String>,
+        /// Squash even if the range contains merge commits
+        #[arg(long)]
+        force: bool,
+        /// Use the current user as author instead of the oldest commit's author
+        #[arg(long)]
+        no_preserve_author: bool,
+        /// Allow rewriting commits that are already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Move a commit to a different position in history
+    Move {
+        commit: String,
+        /// Place it right after this commit
+        #[arg(long, conflicts_with_all = ["before", "to_end"])]
+        after: Option<String>,
+        /// Place it right before this commit
+        #[arg(long, conflicts_with = "to_end")]
+        before: Option<String>,
+        /// Place it at the end of the branch
+        #[arg(long)]
+        to_end: bool,
+        /// Allow rewriting commits that are already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Split a commit into several: split REV --pick ID... -m MSG [--pick ...] [--rest-message MSG]
+    Split {
+        /// Commit to split (HEAD, a SHA, HEAD~2, ...)
+        commit: String,
+        /// `--pick ID[:ranges]... -m MSG [-m BODY]` once per new commit, then optionally
+        /// `--rest-message MSG` for the remaining changes and `--allow-pushed`
+        #[arg(allow_hyphen_values = true, num_args = 1.., required = true)]
+        args: Vec<String>,
+    },
     /// Commit hunks to another branch without checking it out
     CommitTo {
         /// Target branch

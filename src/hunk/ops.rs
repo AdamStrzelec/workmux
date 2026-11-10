@@ -104,7 +104,7 @@ fn find(id: &str, hunks: &[DiffHunk]) -> Result<DiffHunk> {
 }
 
 /// Parse `id`, `id:5`, `id:1-11`, `id:2,5-6,34`. Empty ranges mean the whole hunk.
-fn parse_id_range(raw: &str) -> Result<(&str, Vec<(usize, usize)>)> {
+pub(super) fn parse_id_range(raw: &str) -> Result<(&str, Vec<(usize, usize)>)> {
     let Some((id, range_str)) = raw.split_once(':') else {
         return Ok((raw, Vec::new()));
     };

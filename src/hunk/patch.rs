@@ -68,6 +68,56 @@ pub fn slice_hunk(hunk: &DiffHunk, ranges: &[(usize, usize)], reverse: bool) -> 
     })
 }
 
+/// Slice for a sequence of partial applications of one hunk. `picked` marks change
+/// lines already applied by earlier patches (they are now context or gone);
+/// `selected` marks the lines this patch should apply.
+pub fn slice_hunk_with_state(
+    hunk: &DiffHunk,
+    picked: &[bool],
+    selected: &[bool],
+) -> Result<DiffHunk> {
+    if picked.len() != hunk.lines.len() || selected.len() != hunk.lines.len() {
+        anyhow::bail!("selection mask does not match the hunk length");
+    }
+    let mut lines = Vec::new();
+    for (i, line) in hunk.lines.iter().enumerate() {
+        if let Some(rest) = line.strip_prefix('+') {
+            if selected[i] {
+                lines.push(line.clone());
+            } else if picked[i] {
+                lines.push(format!(" {rest}"));
+            }
+        } else if let Some(rest) = line.strip_prefix('-') {
+            if selected[i] {
+                lines.push(line.clone());
+            } else if !picked[i] {
+                lines.push(format!(" {rest}"));
+            }
+        } else {
+            lines.push(line.clone());
+        }
+    }
+    let old_count = lines
+        .iter()
+        .filter(|l| l.starts_with('-') || l.starts_with(' '))
+        .count();
+    let new_count = lines
+        .iter()
+        .filter(|l| l.starts_with('+') || l.starts_with(' '))
+        .count();
+    let (old_start, new_start) = parse_hunk_starts(&hunk.header)?;
+    let func_ctx = hunk
+        .header
+        .strip_prefix("@@ ")
+        .and_then(|rest| rest.find("@@").map(|e| &rest[e + 2..]))
+        .unwrap_or("");
+    Ok(DiffHunk {
+        header: format!("@@ -{old_start},{old_count} +{new_start},{new_count} @@{func_ctx}"),
+        lines,
+        ..hunk.clone()
+    })
+}
+
 fn parse_hunk_starts(header: &str) -> Result<(usize, usize)> {
     let content = header
         .trim_start_matches("@@ ")
@@ -155,6 +205,16 @@ mod tests {
     fn slicing_drops_unselected_additions_and_keeps_deletion_as_context() {
         let sliced = slice_hunk(&hunk(), &[(3, 3)], false).unwrap();
         assert_eq!(sliced.lines, vec![" c", " old", "+new"]);
+        assert_eq!(sliced.header, "@@ -3,2 +3,3 @@ fn x");
+    }
+
+    #[test]
+    fn stateful_slice_turns_picked_lines_into_context() {
+        // Lines: " c", "-old", "+new", "+extra". First "+new" and "-old" were applied.
+        let picked = [false, true, true, false];
+        let selected = [false, false, false, true];
+        let sliced = slice_hunk_with_state(&hunk(), &picked, &selected).unwrap();
+        assert_eq!(sliced.lines, vec![" c", " new", "+extra"]);
         assert_eq!(sliced.header, "@@ -3,2 +3,3 @@ fn x");
     }
 
