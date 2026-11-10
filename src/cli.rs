@@ -703,6 +703,17 @@ enum Commands {
         last: usize,
     },
 
+    /// Show the local audit log of state-changing commands
+    Audit {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Show only the newest N entries
+        #[arg(long, default_value_t = 30)]
+        last: usize,
+    },
+
     /// Show what everyone sharing the team directory is working on
     Team {
         /// Output as JSON
@@ -1404,6 +1415,7 @@ pub fn run() -> Result<()> {
             refresh,
         } => command::usage::run(json, tmux, refresh),
         Commands::Errors { json, last } => command::errors::run(json, last),
+        Commands::Audit { json, last } => command::audit::run(json, last),
         Commands::Team { json, no_publish } => command::team::run(json, no_publish),
         Commands::Wait {
             worktrees,

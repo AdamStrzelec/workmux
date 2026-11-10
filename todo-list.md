@@ -108,6 +108,8 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
+   - ✅ lokalny `audit.log` (stan usera, poza gitem) + `workmux audit [--json] [--last N]`: user, komenda (add/merge/remove/close/rename/rebase/send/run/set-base/resurrect/sync-files, `hunk` poza list/show), projekt, branch, ok/FAILED. Bez wartości argumentów.
+   - ⬜ współdzielenie logu przez katalog team, wykrywanie zmian zakazanych plików (np. `.env`), widok w dashboardzie
 2. **Profile bezpieczeństwa** (`safe`, `review-only`, `trusted`): jednym ustawieniem określają tryb Claude, zakazane ścieżki i politykę git.
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
@@ -156,3 +158,4 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | Tryb bypass permissions | Wykrywanie i nadzór nad nietechnicznymi użytkownikami | Funkcja jeszcze nie zbudowana |
 | Dziennik błędów | Zapis przy prawdziwej panice (hook), rotacja przy >512 KB | Przetestowane tylko trim i serializacja oraz jeden błąd komendy; panika nie została wywołana end-to-end |
 | Wskaźnik błędów w dashboardzie | Wygląd `⚠ N` w nagłówku, zniknięcie po `workmux errors`, zachowanie na wąskim terminalu | Nie uruchamiałem dashboardu w tmux; brak testu jednostkowego (zależy od zmiennej środowiskowej) |
+| `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |

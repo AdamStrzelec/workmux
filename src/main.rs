@@ -3,6 +3,7 @@ mod agent_error;
 mod agent_identity;
 mod agent_setup;
 mod agent_staleness;
+mod audit;
 mod claude;
 mod claude_launch;
 mod cli;
@@ -69,12 +70,16 @@ fn main() -> Result<()> {
                 tmux_pane = ?context.tmux_pane,
                 "workmux finished successfully"
             );
+            if !deferred_cleanup_worker {
+                audit::record_command(&args, true);
+            }
             Ok(result)
         }
         Err(err) => {
             if !deferred_cleanup_worker {
                 error!(error = ?err, "workmux failed");
                 errlog::record("error", &command_name, &format!("{err:#}"), None, None);
+                audit::record_command(&args, false);
             }
             if let Some(kind) = agent_error::kind_of(&err) {
                 eprintln!("Error: {}: {err:#}", kind.name());

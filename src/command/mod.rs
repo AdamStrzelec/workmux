@@ -1,5 +1,6 @@
 pub mod add;
 pub mod args;
+pub mod audit;
 pub mod capture;
 pub mod changelog;
 pub mod clipboard_read;

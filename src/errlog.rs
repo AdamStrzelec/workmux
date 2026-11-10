@@ -77,7 +77,7 @@ fn append(rec: &Record) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    trim(&path)?;
+    trim(&path, MAX_BYTES)?;
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -87,11 +87,11 @@ fn append(rec: &Record) -> std::io::Result<()> {
 }
 
 /// Drop the oldest lines once the file grows past `MAX_BYTES`.
-fn trim(path: &std::path::Path) -> std::io::Result<()> {
+pub(crate) fn trim(path: &std::path::Path, max_bytes: u64) -> std::io::Result<()> {
     let Ok(meta) = std::fs::metadata(path) else {
         return Ok(());
     };
-    if meta.len() <= MAX_BYTES {
+    if meta.len() <= max_bytes {
         return Ok(());
     }
     let text = std::fs::read_to_string(path)?;
@@ -179,7 +179,7 @@ mod tests {
         let p = dir.path().join("errors.log");
         let line = format!("{}\n", "x".repeat(1000));
         std::fs::write(&p, line.repeat(700)).unwrap();
-        trim(&p).unwrap();
+        trim(&p, MAX_BYTES).unwrap();
         let n = std::fs::read_to_string(&p).unwrap().lines().count();
         assert_eq!(n, 350);
     }

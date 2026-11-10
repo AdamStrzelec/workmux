@@ -162,7 +162,7 @@ pub fn age(now: u64, then: u64) -> String {
 }
 
 /// `<project>` from `.../<project>__worktrees/<name>`, else the parent dir name.
-fn project_of(path: &std::path::Path) -> String {
+pub(crate) fn project_of(path: &std::path::Path) -> String {
     let parent = path.parent().and_then(|p| p.file_name());
     let parent = parent.map(|p| p.to_string_lossy().into_owned());
     match parent {
