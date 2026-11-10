@@ -16,6 +16,7 @@ pub fn run(
     no_verify: bool,
     no_hooks: bool,
     notification: bool,
+    allow_protected: bool,
 ) -> Result<()> {
     if crate::remote::node::operation::in_session() {
         return crate::remote::node::operation::submit(
@@ -115,6 +116,15 @@ pub fn run(
                 progress: None,
             },
         );
+    }
+
+    if !allow_protected {
+        let target = into_branch.unwrap_or(&context.main_branch);
+        crate::guard::ensure_merge_allowed(
+            &crate::config::Config::global_guard_config(),
+            &name_to_merge,
+            target,
+        )?;
     }
 
     let result = workflow::merge(

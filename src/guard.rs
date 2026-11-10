@@ -75,6 +75,24 @@ pub fn changed_files(path: &Path, base: &str) -> Result<Vec<String>> {
     Ok(files)
 }
 
+/// Refuse a merge when the worktree `name` changed protected files compared
+/// to `target`. No-op when no patterns are configured.
+pub fn ensure_merge_allowed(cfg: &GuardConfig, name: &str, target: &str) -> Result<()> {
+    if cfg.protected_paths.is_empty() {
+        return Ok(());
+    }
+    let (path, _) = crate::git::find_worktree(name)?;
+    let base = crate::git::get_merge_base_in(Some(&path), target)?;
+    let hits = violations(cfg, &changed_files(&path, &base)?);
+    if hits.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "merge blocked: protected files changed:\n  {}\nReview them, or rerun with --allow-protected.",
+        hits.join("\n  ")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

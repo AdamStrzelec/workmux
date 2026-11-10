@@ -141,12 +141,31 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 
 **Następne kroki:** blokada `merge` przy zmianie chronionego pliku, wpis w audit logu, widok w dashboardzie, powiązanie z profilami bezpieczeństwa.
 
+### 3.12 Blokada `workmux merge` przy zmianie chronionego pliku (opis szczegółowy)
+
+Cel: agent z bypass permissions (lub nietechniczny partner) nie wmerguje do głównego branchu zmian w `.env` czy `secrets/`, zanim ktoś to obejrzy.
+
+Krok po kroku:
+1. Używa tej samej listy `guard.protected_paths` z globalnego configu co `workmux guard` (3.11).
+2. `workmux merge` przed właściwym mergem (po rozwiązaniu nazwy worktree, przed hookami pre-merge i czyszczeniem) woła `guard::ensure_merge_allowed`.
+3. Funkcja bierze worktree, liczy bazę względem docelowego branchu (`--into` albo `main_branch` z configu) i zbiera zmienione pliki: commity od bazy, zmiany niezacommitowane i nieśledzone.
+4. Jeśli któryś plik pasuje do wzorca, merge kończy się błędem `merge blocked: protected files changed:` z listą plików. Nic nie jest zmergowane ani usunięte.
+5. Pusta lista wzorców: zachowanie bez zmian, zero kosztu.
+6. Świadome obejście: `workmux merge --allow-protected`.
+
+Ograniczenia (uczciwie):
+- `--allow-protected` może podać też agent. To bramka ostrzegawcza, nie twarde zabezpieczenie. Twarde wymaga profili `safe`/`review-only` (sekcja 4).
+- Baza to `--into` albo `main_branch`, nie automatycznie wykryty branch bazowy z `workmux add`. Przy innej bazie lista może być szersza (bezpieczniej, nie węziej).
+- Nie obejmuje merge zdalnych workspace'ów ani merge przez sandbox/RPC.
+- Blokada nie zapisuje się jeszcze w audit logu.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
    - ✅ lokalny `audit.log` (stan usera, poza gitem) + `workmux audit [--json] [--last N]`: user, komenda (add/merge/remove/close/rename/rebase/send/run/set-base/resurrect/sync-files, `hunk` poza list/show), projekt, branch, ok/FAILED. Bez wartości argumentów.
    - ✅ `workmux guard [--json]`: globalna konfiguracja `guard.protected_paths` (wzorce glob; bez `/` dopasowanie po nazwie pliku na dowolnej głębokości, np. `.env*`; z `/` po ścieżce od roota repo, np. `secrets/**`). Dla każdego worktree pokazuje zmienione chronione pliki (commity względem bazy + niezacommitowane + nieśledzone). Kod wyjścia 2, gdy coś znaleziono. Tylko wykrywa, niczego nie blokuje ani nie cofa.
-   - ⬜ współdzielenie logu przez katalog team, blokada merge przy zmianie chronionego pliku, wpis guard w audit logu, widok w dashboardzie
+   - ✅ `workmux merge` odmawia, gdy branch zmienił chronione pliki; obejście `--allow-protected` (patrz 3.12)
+   - ⬜ współdzielenie logu przez katalog team, wpis guard w audit logu, widok w dashboardzie
 2. **Profile bezpieczeństwa** (`safe`, `review-only`, `trusted`): jednym ustawieniem określają tryb Claude, zakazane ścieżki i politykę git.
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
@@ -196,4 +215,5 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | Dziennik błędów | Zapis przy prawdziwej panice (hook), rotacja przy >512 KB | Przetestowane tylko trim i serializacja oraz jeden błąd komendy; panika nie została wywołana end-to-end |
 | Wskaźnik błędów w dashboardzie | Wygląd `⚠ N` w nagłówku, zniknięcie po `workmux errors`, zachowanie na wąskim terminalu | Nie uruchamiałem dashboardu w tmux; brak testu jednostkowego (zależy od zmiennej środowiskowej) |
 | `workmux guard` | Ustaw w globalnym configu `guard: {protected_paths: [".env*"]}`, zmień `.env` w worktree (też bez commita) i uruchom `workmux guard`: ma wypisać branch i plik, kod wyjścia 2. Sprawdź też wzorzec ze `/` | Testy pokrywają tylko dopasowanie wzorców, nie git na prawdziwym repo |
+| `workmux merge` + guard | Z `guard.protected_paths: [".env*"]` zmień `.env` w worktree i uruchom `workmux merge`: ma odmówić z listą plików. Powtórz z `--allow-protected`: ma przejść. Sprawdź też merge bez zmian chronionych | Brak testu na prawdziwym repo, tylko kompilacja i istniejące testy |
 | `workmux audit` | Po `workmux merge`/`rm`/`hunk commit` w prawdziwym repo: wpis w `audit.log` (user, projekt, branch, ok). Czy `rm` i komendy z aliasami łapią się poprawnie | Testy sprawdzają tylko klasyfikację komend, nie zapis w prawdziwym stanie |

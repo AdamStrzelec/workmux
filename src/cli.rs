@@ -500,6 +500,10 @@ enum Commands {
         /// Show a system notification on successful merge
         #[arg(long)]
         notification: bool,
+
+        /// Merge even if the branch changed files matching guard.protected_paths
+        #[arg(long)]
+        allow_protected: bool,
     },
 
     /// Rebase a worktree branch onto its base branch
@@ -1347,6 +1351,7 @@ pub fn run() -> Result<()> {
             no_verify,
             no_hooks,
             notification,
+            allow_protected,
         } => command::merge::run(
             name.as_deref(),
             into.as_deref(),
@@ -1358,6 +1363,7 @@ pub fn run() -> Result<()> {
             no_verify,
             no_hooks,
             notification,
+            allow_protected,
         ),
         Commands::Rebase { name } => command::rebase::run(name.as_deref()),
         Commands::Remove {
