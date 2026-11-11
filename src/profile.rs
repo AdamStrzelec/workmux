@@ -75,6 +75,65 @@ pub fn check(profile: Profile, args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Raw git/gh commands a restricted profile denies to Claude, so work goes
+/// through workmux (which applies this profile and writes the audit log).
+const CLAUDE_DENY_SAFE: &[&str] = &[
+    "Bash(git push:*)",
+    "Bash(git merge:*)",
+    "Bash(git rebase:*)",
+    "Bash(git reset --hard:*)",
+    "Bash(git clean:*)",
+    "Bash(gh pr merge:*)",
+];
+
+/// Extra denials for `review-only`: commits must go through `workmux hunk commit`.
+const CLAUDE_DENY_REVIEW_ONLY: &[&str] = &["Bash(git commit:*)", "Bash(git checkout:*)"];
+
+/// Extra `claude` flags enforced by a profile. None for `trusted`.
+/// `protected` are the configured `guard.protected_paths`.
+///
+/// `safe`: no bypass permissions, no raw push/merge/rebase/hard reset/clean,
+/// no Edit/Write of protected paths. `review-only`: additionally no raw
+/// `git commit`/`checkout`. Claude-side only: it does not stop Bash from
+/// writing files by other means, and it is not a boundary against the user.
+pub fn claude_args(profile: Profile, protected: &[String]) -> Vec<String> {
+    if profile == Profile::Trusted {
+        return Vec::new();
+    }
+    let mut deny: Vec<String> = CLAUDE_DENY_SAFE.iter().map(|s| s.to_string()).collect();
+    if profile == Profile::ReviewOnly {
+        deny.extend(CLAUDE_DENY_REVIEW_ONLY.iter().map(|s| s.to_string()));
+    }
+    for pat in protected {
+        let pat = pat.trim();
+        if pat.is_empty() {
+            continue;
+        }
+        let scoped = if pat.contains('/') {
+            pat.to_string()
+        } else {
+            format!("**/{pat}")
+        };
+        deny.push(format!("Edit({scoped})"));
+        deny.push(format!("Write({scoped})"));
+    }
+    let mut args = vec!["--disallowedTools".to_string()];
+    args.extend(deny);
+    args
+}
+
+/// Drops bypass-permission switches from an existing claude argv: the skip
+/// flag is removed and `--permission-mode bypassPermissions` becomes
+/// `acceptEdits`. Used when the profile is not `trusted`.
+pub fn strip_bypass(args: &mut Vec<String>) {
+    args.retain(|a| a != "--dangerously-skip-permissions");
+    for i in 0..args.len().saturating_sub(1) {
+        if args[i] == "--permission-mode" && args[i + 1] == "bypassPermissions" {
+            args[i + 1] = "acceptEdits".to_string();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +177,37 @@ mod tests {
         assert!(note.unwrap().contains("bad yaml"));
         assert_eq!(resolve(Ok(None)), (Profile::Trusted, None));
         assert_eq!(resolve(Ok(Some(Profile::Safe))), (Profile::Safe, None));
+    }
+
+    #[test]
+    fn claude_args_by_profile() {
+        assert!(claude_args(Profile::Trusted, &[".env*".into()]).is_empty());
+        let safe = claude_args(Profile::Safe, &[".env*".into(), "secrets/**".into()]);
+        assert_eq!(safe[0], "--disallowedTools");
+        assert!(safe.contains(&"Bash(git push:*)".to_string()));
+        assert!(!safe.contains(&"Bash(git commit:*)".to_string()));
+        assert!(safe.contains(&"Edit(**/.env*)".to_string()));
+        assert!(safe.contains(&"Write(secrets/**)".to_string()));
+        let ro = claude_args(Profile::ReviewOnly, &[]);
+        assert!(ro.contains(&"Bash(git commit:*)".to_string()));
+    }
+
+    #[test]
+    fn strip_bypass_removes_skip_and_downgrades_mode() {
+        let mut args: Vec<String> = [
+            "--dangerously-skip-permissions",
+            "--permission-mode",
+            "bypassPermissions",
+            "--model",
+            "opus",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        strip_bypass(&mut args);
+        assert_eq!(
+            args,
+            ["--permission-mode", "acceptEdits", "--model", "opus"]
+        );
     }
 }

@@ -188,6 +188,21 @@ Ograniczenia (uczciwie):
 
 Uzupełnienie (fail-closed): gdy globalny config istnieje, ale się nie parsuje (literówka, zła struktura), obowiązuje najostrzejszy profil `review-only`, a odmowa pokazuje przyczynę i błąd parsowania. Brak pliku to nadal `trusted`. Komendy tylko do odczytu działają bez zmian, więc plik można naprawić ręcznie. Skutek uboczny: literówka w dowolnej sekcji configu (nie tylko profilu) blokuje `merge`, `remove` i `rebase` aż do naprawy.
 
+Uzupełnienie (tryb Claude per profil): profil działa też na samego Claude'a uruchamianego przez workmux (panel agenta w `add`, `open` itd.). Dla profilu innego niż `trusted` workmux przy starcie panelu:
+1. usuwa `--dangerously-skip-permissions` z komendy agenta, a `--permission-mode bypassPermissions` zmienia na `acceptEdits`;
+2. dodaje `--disallowedTools` z listą zakazów:
+   - `safe`: `git push`, `git merge`, `git rebase`, `git reset --hard`, `git clean`, `gh pr merge` oraz `Edit(...)` i `Write(...)` dla każdego wzorca z `guard.protected_paths` (wzorzec bez `/` jako `**/<wzorzec>`, np. `Edit(**/.env*)`);
+   - `review-only`: to samo plus `git commit` i `git checkout`, więc commity idą przez audytowane `workmux hunk commit`.
+3. Profil czytany z globalnego configu użytkownika (fail-closed jak wyżej), reguły zbiera `profile::claude_args`. Dotyczy tylko agenta Claude.
+
+Ograniczenia tego uzupełnienia:
+- Zakaz `Edit`/`Write` nie powstrzyma `Bash` przed zapisem pliku innym sposobem (`sed -i`, `echo >`, `python`). To kolejna warstwa ostrzegawcza, nie granica.
+- Zakazy Claude'a dotyczą formy polecenia (`git push:*`); da się je obejść inną ścieżką (np. `git -C . push`). Twardy zakaz musi być po stronie serwera.
+- Agent w sandboxie dostaje flagę skip-permissions dopiero po tym kroku (sandbox jest wtedy granicą), więc profil jej nie zdejmuje.
+- Użytkownik może ręcznie odpalić `claude` poza workmux; profil go nie dotyczy.
+- Nie sprawdzone: czy składnia `Edit(**/.env*)` dopasowuje pliki tak, jak oczekujemy, w używanej wersji Claude Code.
+
+
 ### 3.14 Wykrywanie kolizji `workmux collisions` (opis szczegółowy)
 
 Cel: zanim dwie osoby (albo dwa agenty) skończą pracę i pokłócą się w merge, pokazać, że dotykają tego samego.
@@ -260,7 +275,8 @@ Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, pr
 2. **Profile bezpieczeństwa** (`safe`, `review-only`, `trusted`): jednym ustawieniem określają tryb Claude, zakazane ścieżki i politykę git.
    - ✅ `safety_profile` w globalnym configu: ograniczenia komend workmux (patrz 3.13)
    - ✅ fail-closed: nieparsowalny global config daje `review-only` (patrz 3.13)
-   - ⬜ tryb Claude per profil, wymuszenie poza workmux (protected branch, hooki serwera)
+   - ✅ tryb Claude per profil: bez bypass permissions, zakazy raw git/gh i Edit/Write chronionych ścieżek (patrz 3.13)
+   - ⬜ wymuszenie poza workmux (protected branch, hooki serwera)
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
    - ✅ `workmux collisions [--json]`: pliki zmienione w 2+ worktree oraz branche z agentami 2+ użytkowników (patrz 3.14)
    - ✅ ostrzeżenie w dashboardzie (licznik w nagłówku) i przy `workmux add`
@@ -331,4 +347,5 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |
+| tryb Claude per profil | Ustaw `safety_profile: safe` i `guard.protected_paths: ['.env*']`, uruchom agenta (`workmux add`) i w panelu sprawdź `ps`/historię komendy: brak `--dangerously-skip-permissions`, jest `--disallowedTools ...`. Poproś agenta o `git push` i o edycję `.env`: oba mają zostać odrzucone. Sprawdź też `review-only` (odmowa `git commit`) i że `trusted` nic nie zmienia. Zweryfikuj składnię `Edit(**/.env*)` w swojej wersji Claude Code | Tylko testy jednostkowe `claude_args`/`strip_bypass`; nie uruchomiony prawdziwy agent |
 | nagłówek dashboardu: guard/collisions | Ustaw `guard.protected_paths` (np. `.env*`), w worktree zmień taki plik i otwórz dashboard: w nagłówku ma być `⚠ guard 1` w ciągu ~minuty. Zmień ten sam plik w drugim worktree: `collisions N`. Sprawdź, że przy zero wskaźnik znika i że dashboard nie zwalnia na dużym repo (liczenie co 60 s w tle) | Tylko test jednostkowy etykiety i budowanie; nie oglądane w prawdziwym dashboardzie |

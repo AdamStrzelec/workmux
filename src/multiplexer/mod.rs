@@ -765,6 +765,20 @@ pub trait Multiplexer: Send + Sync {
                         );
                         selected_agent.command.args.extend(args);
                     }
+                    if selected_agent.kind() == "claude" {
+                        let (profile, _) = crate::config::Config::global_safety_profile();
+                        if profile != crate::profile::Profile::Trusted {
+                            crate::profile::strip_bypass(&mut selected_agent.command.args);
+                            let protected =
+                                crate::config::Config::global_guard_config().protected_paths;
+                            let extra = crate::profile::claude_args(profile, &protected);
+                            let extra = crate::claude_launch::merge_launch_args(
+                                &selected_agent.command.args,
+                                extra,
+                            );
+                            selected_agent.command.args.extend(extra);
+                        }
+                    }
                 }
 
                 // Apply sandbox wrapping if enabled for this pane type
