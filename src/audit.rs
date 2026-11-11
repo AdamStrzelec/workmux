@@ -39,6 +39,7 @@ pub fn action_label(args: &[String]) -> Option<String> {
             let sub = positional.next()?.as_str();
             (!HUNK_READ_ONLY.contains(&sub)).then(|| format!("hunk {sub}"))
         }
+        "consult" => Some("consult".to_string()),
         "enforce" => {
             let sub = positional.next()?.as_str();
             matches!(sub, "install" | "uninstall").then(|| format!("enforce {sub}"))

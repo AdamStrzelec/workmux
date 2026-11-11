@@ -7,6 +7,7 @@ pub mod clipboard_read;
 pub mod close;
 pub mod collisions;
 pub mod config;
+pub mod consult;
 pub mod dashboard;
 pub mod docs;
 pub mod enforce;

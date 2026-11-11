@@ -718,6 +718,21 @@ enum Commands {
         json: bool,
     },
 
+    /// Ask another model about files or the branch diff (consult.command)
+    Consult {
+        /// Question (or pipe it on stdin)
+        question: Option<String>,
+        /// File to include (repeatable; protected files are left out)
+        #[arg(short, long)]
+        file: Vec<String>,
+        /// Include the branch diff against the default branch
+        #[arg(long)]
+        diff: bool,
+        /// Review mode: exit 1 unless the answer starts with APPROVE
+        #[arg(long)]
+        review: bool,
+    },
+
     /// Install git hooks that block commits and pushes on protected branches
     Enforce {
         #[command(subcommand)]
@@ -1464,6 +1479,12 @@ pub fn run() -> Result<()> {
             refresh,
         } => command::usage::run(json, tmux, refresh),
         Commands::Errors { json, last } => command::errors::run(json, last),
+        Commands::Consult {
+            question,
+            file,
+            diff,
+            review,
+        } => command::consult::run(question, file, diff, review),
         Commands::Enforce { command } => match command {
             EnforceCommands::Install { branches } => command::enforce::install(branches),
             EnforceCommands::Uninstall => command::enforce::uninstall(),

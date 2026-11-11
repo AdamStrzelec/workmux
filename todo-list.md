@@ -11,7 +11,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 | 1 | tmux-agent-usage | raine/tmux-agent-usage | ✅ (Claude, globalnie) | `workmux usage`, nagłówek dashboardu, alerty. Zostały paski postępu |
 | 2 | git-surgeon | raine/git-surgeon | ✅ | `workmux hunk` (list, show, stage, unstage, discard, commit, commit-to) gotowe, z blokadą commitów na `main`/`master`/gałąź domyślną. `list --blame` gotowe. `undo`, `amend`, `reword` gotowe (z blokadą na chronionych gałęziach i na wypchniętych commitach). `fold`, `squash`, `move`, `split` gotowe. git-surgeon w całości przeniesiony. Poza zakresem: `update`, `install-skill` |
 | 3 | claude-history | raine/claude-history | ⬜ | Przeszukiwanie historii rozmów Claude, powiązanie z worktree/sesją, handoff |
-| 4 | consult-llm | raine/consult-llm | ⬜ | Drugi model do review; baza dla pre-merge gate (`/review-panel`) |
+| 4 | consult-llm | raine/consult-llm | 🟡 (`workmux consult`, patrz 3.20; bez wątków, debat i monitora) | Drugi model do review; baza dla pre-merge gate (`/review-panel`) |
 | 5 | tmux-tools | raine/tmux-tools | ⬜ | Do przejrzenia, co z tego ma sens w workmux |
 | 6 | tmux-file-picker | raine/tmux-file-picker | ⬜ | Wybór plików z poziomu tmux, np. do promptów agentów |
 | 7 | tmux-bro | raine/tmux-bro | ⬜ | Do przejrzenia, co z tego ma sens w workmux |
@@ -283,6 +283,32 @@ Ograniczenia (uczciwie):
 - Prawdziwe wymuszenie: protected branch na GitHubie / hook `pre-receive` na serwerze, na który partnerzy nie mają uprawnień zapisu. Nie robiliśmy tego.
 - W tym repo (fork) istnieją własne `pre-commit` i `pre-push`, więc `install` tu odmówi z komunikatem (zamierzone).
 
+### 3.20 Druga opinia `workmux consult` (opis szczegółowy)
+
+Cel: natywny odpowiednik consult-llm (raine): zapytać inny model o pliki lub diff brancha, także jako bramka przed mergem. workmux sam nie łączy się z żadnym API ani nie trzyma kluczy: składa prompt i podaje go na stdin komendy, którą wybierasz.
+
+Konfiguracja (globalny config):
+```yaml
+consult:
+  command: "llm -m gemini-2.5-pro"   # każda komenda czytająca prompt ze stdin i drukująca odpowiedź
+  max_bytes: 200000                  # limit kontekstu (pliki + diff), domyślnie 200000
+```
+Krok po kroku:
+1. `workmux consult "pytanie" -f src/a.rs -f src/b.rs --diff`: prompt = pytanie (argument albo stdin) + zawartość plików + diff brancha względem brancha domyślnego. Odpowiedź modelu idzie na stdout.
+2. Pliki muszą leżeć w repo. Pliki pasujące do `guard.protected_paths` są pomijane, a w diffie pomijane są zmiany tych plików (komunikat `Left out as protected: ...`), żeby `.env` i sekrety nie wyszły poza maszynę.
+3. Kontekst jest obcinany do `max_bytes` (pliki najpierw, reszta na diff) z adnotacją o obcięciu.
+4. Przed wysłaniem na stderr: ile bajtów, ile plików i do jakiego programu (sama nazwa programu, bez argumentów).
+5. `--review`: tryb bramki. Dodaje instrukcję recenzenta i wymaga, by pierwsza niepusta linia odpowiedzi zaczynała się od `APPROVE` (inaczej `REJECT: powód`). Exit 0 tylko przy `APPROVE`; `REJECT`, błąd komendy, pusty diff albo brak `consult.command` dają exit niezerowy (fail-closed). Diff bierze ze stdin, a gdy go brak, z brancha.
+6. Podpięcie jako bramka przed mergem: `guard.review_command: "workmux consult --review"` (patrz 3.17). Komenda dostaje diff na stdin, więc działa od razu.
+7. Audit log: wpis `consult` (kto i na którym branchu wysłał kod do modelu) oraz `consult review rejected`. Bez treści promptu.
+
+Ograniczenia (uczciwie):
+- Cały prompt opuszcza maszynę (to robi wybrana komenda, np. API dostawcy). Wzorce `protected_paths` to jedyny filtr; sekret wklejony w zwykły plik albo w pytanie pójdzie dalej.
+- Odpowiedź `APPROVE` to opinia modelu, nie gwarancja. Model może się pomylić lub dać się zwieść treścią diffa (prompt injection w kodzie). Bramka ma wspierać człowieka, nie go zastępować.
+- Brak wątków wielotur (`thread_id`), trybu `--web` (schowek), debat wielu modeli i monitora z consult-llm. Do tego nadal można użyć oryginalnego `consult-llm` jako `consult.command`.
+- Nie obcina po stronie modelu: bardzo duży diff zostanie ucięty i recenzent zobaczy tylko początek.
+- Bramka domyślnie wyłączona i działa tylko tam, gdzie ustawiono `guard.review_command`. Nietechniczny partner może jej nie ustawić ani jej obejść `--skip-review`, chyba że zablokuje to profil (nie robimy tego jeszcze).
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -307,6 +333,8 @@ Ograniczenia (uczciwie):
    - ✅ `workmux handoff [--json]`: notatka przekazania bieżącego worktree (branch, baza, commity od bazy, zmiany niezacommitowane, wszystkie zmienione pliki, liczba snapshotów) — patrz 3.16
    - ⬜ przełączenie okna tmux, dołączenie ostatnich promptów/historii rozmowy (wymaga claude-history)
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
+   - ✅ `workmux consult --review` jako `guard.review_command` (patrz 3.20): jeden recenzent, blokada przy `REJECT`/błędzie
+   - ⬜ panel wielu modeli, uruchomienie testów w bramce, zatwierdzenie przez człowieka
 6. **Snapshot / szybki rollback worktree**, gdy agent coś zepsuje.
    - ✅ `workmux snapshot save [etykieta] | list [--json] | restore <id>` (patrz 3.15)
    - ✅ automatyczny snapshot przed `workmux send` (opcja `guard.snapshot_before_send`, patrz 3.18)
@@ -369,6 +397,7 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |
+| `workmux consult` | Ustaw `consult.command` na realnego klienta (`llm`, `gemini -p`, `codex exec -`). `workmux consult "pytanie" -f plik --diff` na prawdziwej gałęzi. Sprawdź: pominięcie `.env` (komunikat), obcięcie przy małym `max_bytes`, `--review` z oczywiście złą zmianą (ma dać REJECT i exit 1) i z dobrą. Wpisz `guard.review_command: "workmux consult --review"` i spróbuj `workmux merge` (blokada przy REJECT). Zobacz wpisy `consult` w `workmux audit` i czy dostawca modelu akceptuje taki rozmiar kontekstu | Sprawdzone tylko z atrapą komendy (skrypt zwracający APPROVE/REJECT) na tymczasowym repo; nie z prawdziwym modelem |
 | `workmux enforce` | W kopii prawdziwego repo: `workmux enforce install`, potem na `main` `git commit` i `git push origin main` mają odmówić, na innym branchu działać; `WORKMUX_ALLOW_PROTECTED=1` przepuszcza. Sprawdź repo z istniejącymi hookami (odmowa bez zmian), `core.hooksPath`, `enforce uninstall`, wpisy w audit logu oraz że `workmux merge` nadal scala do main. Przetestuj na koncie partnera z profilem `safe` (uninstall zablokowany) | Sprawdzone ręcznie na tymczasowym repo z bare remote: commit i push na main odrzucone, feature branch i obejście działają, odmowa przy cudzym hooku |
 | tryb Claude per profil | Ustaw `safety_profile: safe` i `guard.protected_paths: ['.env*']`, uruchom agenta (`workmux add`) i w panelu sprawdź `ps`/historię komendy: brak `--dangerously-skip-permissions`, jest `--disallowedTools ...`. Poproś agenta o `git push` i o edycję `.env`: oba mają zostać odrzucone. Sprawdź też `review-only` (odmowa `git commit`) i że `trusted` nic nie zmienia. Zweryfikuj składnię `Edit(**/.env*)` w swojej wersji Claude Code | Tylko testy jednostkowe `claude_args`/`strip_bypass`; nie uruchomiony prawdziwy agent |
 | nagłówek dashboardu: guard/collisions | Ustaw `guard.protected_paths` (np. `.env*`), w worktree zmień taki plik i otwórz dashboard: w nagłówku ma być `⚠ guard 1` w ciągu ~minuty. Zmień ten sam plik w drugim worktree: `collisions N`. Sprawdź, że przy zero wskaźnik znika i że dashboard nie zwalnia na dużym repo (liczenie co 60 s w tle) | Tylko test jednostkowy etykiety i budowanie; nie oglądane w prawdziwym dashboardzie |

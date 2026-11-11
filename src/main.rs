@@ -12,6 +12,7 @@ mod collision;
 mod command;
 mod config;
 mod config_yaml;
+mod consult;
 mod creation_time;
 mod enforce;
 mod errlog;

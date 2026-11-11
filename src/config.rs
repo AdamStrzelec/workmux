@@ -1062,6 +1062,10 @@ pub struct Config {
     #[serde(default)]
     pub guard: crate::guard::GuardConfig,
 
+    /// Second-opinion command (`workmux consult`). Global config only.
+    #[serde(default)]
+    pub consult: crate::consult::ConsultConfig,
+
     /// Whether to use nerdfont icons (None = prompt user on first run)
     #[serde(default)]
     pub nerdfont: Option<bool>,
@@ -3225,6 +3229,15 @@ impl Config {
                 .map(|c| c.map(|c| c.safety_profile))
                 .map_err(|e| format!("{e:#}")),
         )
+    }
+
+    /// `consult` section of the global config; defaults when absent or invalid.
+    pub fn global_consult_config() -> crate::consult::ConsultConfig {
+        Self::load_global()
+            .ok()
+            .flatten()
+            .map(|c| c.consult)
+            .unwrap_or_default()
     }
 
     /// `guard` section of the global config; defaults when absent or invalid.
