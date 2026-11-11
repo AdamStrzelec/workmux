@@ -10,7 +10,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 |---|-----------|------|--------|------|
 | 1 | tmux-agent-usage | raine/tmux-agent-usage | ✅ (Claude, globalnie) | `workmux usage`, nagłówek dashboardu, alerty. Zostały paski postępu |
 | 2 | git-surgeon | raine/git-surgeon | ✅ | `workmux hunk` (list, show, stage, unstage, discard, commit, commit-to) gotowe, z blokadą commitów na `main`/`master`/gałąź domyślną. `list --blame` gotowe. `undo`, `amend`, `reword` gotowe (z blokadą na chronionych gałęziach i na wypchniętych commitach). `fold`, `squash`, `move`, `split` gotowe. git-surgeon w całości przeniesiony. Poza zakresem: `update`, `install-skill` |
-| 3 | claude-history | raine/claude-history | ⬜ | Przeszukiwanie historii rozmów Claude, powiązanie z worktree/sesją, handoff |
+| 3 | claude-history | raine/claude-history | 🟡 (`workmux history`, patrz 3.21; bez TUI i fuzzy) | Przeszukiwanie historii rozmów Claude, powiązanie z worktree/sesją, handoff |
 | 4 | consult-llm | raine/consult-llm | 🟡 (`workmux consult`, patrz 3.20; bez wątków, debat i monitora) | Drugi model do review; baza dla pre-merge gate (`/review-panel`) |
 | 5 | tmux-tools | raine/tmux-tools | ⬜ | Do przejrzenia, co z tego ma sens w workmux |
 | 6 | tmux-file-picker | raine/tmux-file-picker | ⬜ | Wybór plików z poziomu tmux, np. do promptów agentów |
@@ -309,6 +309,22 @@ Ograniczenia (uczciwie):
 - Nie obcina po stronie modelu: bardzo duży diff zostanie ucięty i recenzent zobaczy tylko początek.
 - Bramka domyślnie wyłączona i działa tylko tam, gdzie ustawiono `guard.review_command`. Nietechniczny partner może jej nie ustawić ani jej obejść `--skip-review`, chyba że zablokuje to profil (nie robimy tego jeszcze).
 
+### 3.21 Historia rozmów `workmux history` (opis szczegółowy)
+
+Cel: natywny, uproszczony odpowiednik claude-history (raine): przeszukiwać i czytać lokalne rozmowy Claude Code. Tylko odczyt; nic nie jest zapisywane, nic nie opuszcza maszyny, brak wpisu w audit logu.
+
+1. Źródło: `<CLAUDE_CONFIG_DIR lub ~/.claude>/projects/<zakodowana ścieżka>/*.jsonl`. Domyślnie bierze rozmowy projektu odpowiadającego bieżącemu katalogowi (tak samo jak przy forkowaniu rozmowy do worktree); `--all` przeszukuje wszystkie projekty.
+2. `workmux history search [zapytanie] [--all] [--limit N] [--json]`: lista rozmów od najnowszej (id, wiek, liczba wiadomości, pierwszy prompt). Z zapytaniem zostają tylko rozmowy zawierające tekst (bez rozróżniania wielkości liter), z liczbą trafień i fragmentem wokół pierwszego trafienia.
+3. `workmux history show <id lub prefiks> [--all] [--last N] [--json]`: ostatnie N wiadomości (domyślnie 30), każda obcięta do 2000 znaków. Niejednoznaczny prefiks daje błąd.
+4. Brane są tylko widoczne teksty użytkownika i asystenta. Pomijane: wyniki narzędzi, wywołania narzędzi, myślenie, wiadomości boczne (sidechain), meta, wstrzyknięte `<system-reminder>`/`<command-…>`. Pliki > 200 MB są pomijane.
+5. `workmux handoff --prompts N`: dokleja do notatki ostatnie N promptów wpisanych przez człowieka w najnowszej rozmowie tego worktree (każdy do 300 znaków). Domyślnie 0 (wyłączone).
+
+Ograniczenia:
+- Brak interaktywnego TUI i fuzzy search z oryginału; to zwykłe wyszukiwanie podciągu.
+- Rozmowa może zawierać sekrety wklejone przez użytkownika. `history` drukuje je na terminal bez filtra, a `handoff --prompts` wkleja prompty do notatki, którą potem możesz komuś przekazać. Przejrzyj notatkę przed wysłaniem. `guard.protected_paths` tu nie działa.
+- Czyta pliki całego użytkownika systemowego; nie widzi rozmów innych użytkowników Linuxa (brak współdzielenia).
+- Odczyt całych plików przy każdym wyszukiwaniu: przy dużej historii `--all` może chwilę trwać.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -331,7 +347,8 @@ Ograniczenia (uczciwie):
    - ⬜ wpis w audit logu, kolizje plików między użytkownikami (wymaga listy plików w migawce)
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
    - ✅ `workmux handoff [--json]`: notatka przekazania bieżącego worktree (branch, baza, commity od bazy, zmiany niezacommitowane, wszystkie zmienione pliki, liczba snapshotów) — patrz 3.16
-   - ⬜ przełączenie okna tmux, dołączenie ostatnich promptów/historii rozmowy (wymaga claude-history)
+   - ✅ `workmux handoff --prompts N` dołącza ostatnie N promptów z rozmowy w worktree (patrz 3.21)
+   - ⬜ przełączenie okna tmux, dołączenie odpowiedzi agenta
 5. **Pre-merge gate**: po PR automatycznie consult-llm `/review-panel` plus testy; merge dopiero po zatwierdzeniu człowieka.
    - ✅ `workmux consult --review` jako `guard.review_command` (patrz 3.20): jeden recenzent, blokada przy `REJECT`/błędzie
    - ⬜ panel wielu modeli, uruchomienie testów w bramce, zatwierdzenie przez człowieka
@@ -398,6 +415,7 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |
 | `workmux consult` | Ustaw `consult.command` na realnego klienta (`llm`, `gemini -p`, `codex exec -`). `workmux consult "pytanie" -f plik --diff` na prawdziwej gałęzi. Sprawdź: pominięcie `.env` (komunikat), obcięcie przy małym `max_bytes`, `--review` z oczywiście złą zmianą (ma dać REJECT i exit 1) i z dobrą. Wpisz `guard.review_command: "workmux consult --review"` i spróbuj `workmux merge` (blokada przy REJECT). Zobacz wpisy `consult` w `workmux audit` i czy dostawca modelu akceptuje taki rozmiar kontekstu | Sprawdzone tylko z atrapą komendy (skrypt zwracający APPROVE/REJECT) na tymczasowym repo; nie z prawdziwym modelem |
+| `workmux history` | `workmux history search` w repo, gdzie rozmawiałeś z Claude; `search "fraza"`, `search --all`; `show <prefiks id> --last 5`; `workmux handoff --prompts 3` w worktree z agentem. Sprawdź: czy fragmenty i liczba trafień się zgadzają, czy pierwszy prompt jest ludzki (nie system-reminder), czy `--all` nie jest zbyt wolne na Twojej historii | Sprawdzone tylko na własnej rozmowie tej sesji na macOS; nie na dużej historii, nie na Linuxie ani innym użytkowniku |
 | `workmux enforce` | W kopii prawdziwego repo: `workmux enforce install`, potem na `main` `git commit` i `git push origin main` mają odmówić, na innym branchu działać; `WORKMUX_ALLOW_PROTECTED=1` przepuszcza. Sprawdź repo z istniejącymi hookami (odmowa bez zmian), `core.hooksPath`, `enforce uninstall`, wpisy w audit logu oraz że `workmux merge` nadal scala do main. Przetestuj na koncie partnera z profilem `safe` (uninstall zablokowany) | Sprawdzone ręcznie na tymczasowym repo z bare remote: commit i push na main odrzucone, feature branch i obejście działają, odmowa przy cudzym hooku |
 | tryb Claude per profil | Ustaw `safety_profile: safe` i `guard.protected_paths: ['.env*']`, uruchom agenta (`workmux add`) i w panelu sprawdź `ps`/historię komendy: brak `--dangerously-skip-permissions`, jest `--disallowedTools ...`. Poproś agenta o `git push` i o edycję `.env`: oba mają zostać odrzucone. Sprawdź też `review-only` (odmowa `git commit`) i że `trusted` nic nie zmienia. Zweryfikuj składnię `Edit(**/.env*)` w swojej wersji Claude Code | Tylko testy jednostkowe `claude_args`/`strip_bypass`; nie uruchomiony prawdziwy agent |
 | nagłówek dashboardu: guard/collisions | Ustaw `guard.protected_paths` (np. `.env*`), w worktree zmień taki plik i otwórz dashboard: w nagłówku ma być `⚠ guard 1` w ciągu ~minuty. Zmień ten sam plik w drugim worktree: `collisions N`. Sprawdź, że przy zero wskaźnik znika i że dashboard nie zwalnia na dużym repo (liczenie co 60 s w tle) | Tylko test jednostkowy etykiety i budowanie; nie oglądane w prawdziwym dashboardzie |

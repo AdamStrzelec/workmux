@@ -716,6 +716,15 @@ enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+        /// Include the last N prompts typed to the agent in this worktree (0 = none)
+        #[arg(long, default_value_t = 0)]
+        prompts: usize,
+    },
+
+    /// Search and read local Claude Code conversations
+    History {
+        #[command(subcommand)]
+        command: HistoryCommands,
     },
 
     /// Ask another model about files or the branch diff (consult.command)
@@ -1479,6 +1488,20 @@ pub fn run() -> Result<()> {
             refresh,
         } => command::usage::run(json, tmux, refresh),
         Commands::Errors { json, last } => command::errors::run(json, last),
+        Commands::History { command } => match command {
+            HistoryCommands::Search {
+                query,
+                all,
+                limit,
+                json,
+            } => command::history::list(query, all, limit, json),
+            HistoryCommands::Show {
+                id,
+                all,
+                last,
+                json,
+            } => command::history::show(&id, all, last, json),
+        },
         Commands::Consult {
             question,
             file,
@@ -1497,7 +1520,7 @@ pub fn run() -> Result<()> {
             SnapshotCommands::Restore { id } => command::snapshot::restore(&id),
         },
         Commands::Guard { json } => command::guard::run(json),
-        Commands::Handoff { json } => command::handoff::run(json),
+        Commands::Handoff { json, prompts } => command::handoff::run(json, prompts),
         Commands::Collisions { json } => command::collisions::run(json),
         Commands::Audit { json, last, team } => command::audit::run(json, last, team),
         Commands::Team { json, no_publish } => command::team::run(json, no_publish),
@@ -2391,6 +2414,37 @@ pub enum HunkCommand {
         #[arg(short, long)]
         message: String,
         ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HistoryCommands {
+    /// List conversations of this project, optionally only those mentioning QUERY
+    Search {
+        /// Case-insensitive text to look for in messages
+        query: Option<String>,
+        /// Search every project, not only the current worktree
+        #[arg(long)]
+        all: bool,
+        /// Maximum conversations listed
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the messages of one conversation (id or unique prefix)
+    Show {
+        id: String,
+        /// Look in every project, not only the current worktree
+        #[arg(long)]
+        all: bool,
+        /// Only the last N messages
+        #[arg(long, default_value_t = 30)]
+        last: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 

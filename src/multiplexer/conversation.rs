@@ -60,7 +60,7 @@ impl ClaudeForker {
 
     /// Encode a path the same way Claude Code does for project directories.
     /// Non-alphanumeric characters (except `-`) become `-`.
-    fn encode_path(path: &Path) -> String {
+    pub(crate) fn encode_path(path: &Path) -> String {
         path.to_string_lossy()
             .chars()
             .map(|c| {
