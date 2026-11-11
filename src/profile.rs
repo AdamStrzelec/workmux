@@ -65,6 +65,7 @@ pub fn check(profile: Profile, args: &[String]) -> Result<()> {
         ("merge", _) => {
             profile == Profile::ReviewOnly || args.iter().any(|a| a == "--allow-protected")
         }
+        ("enforce", Some("uninstall")) => true,
         ("remove" | "rebase", _) => profile == Profile::ReviewOnly,
         _ => false,
     };

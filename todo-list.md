@@ -262,6 +262,27 @@ Ograniczenia: bez limitu czasu i bez limitu rozmiaru diffu (cały diff idzie na 
 
 Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, prompty wpisane ręcznie w tmux i akcje z dashboardu nie robią snapshotu. Brak czyszczenia starych snapshotów, więc przy częstym `send` refy się namnażają. Na dużym repo każdy `send` trwa dłużej (skan plików).
 
+### 3.19 Wymuszenie poza workmux `workmux enforce` (opis szczegółowy)
+
+Cel: chronić branche także wtedy, gdy ktoś (albo agent z bypass permissions) użyje gołego `git`, z pominięciem workmux.
+
+Krok po kroku:
+1. `workmux enforce install [--branches main,release]` zapisuje w repo trzy hooki gita: `pre-commit`, `pre-merge-commit`, `pre-push`. Domyślnie chronione: `main`, `master` i wykryty branch domyślny. Nazwy branchy dopuszczają tylko litery, cyfry i `. _ / -` (są wpisywane do skryptu sh).
+2. Hooki odmawiają: commita i merge-commita, gdy bieżący branch jest chroniony, oraz `git push` do chronionego brancha (sprawdzają `remote_ref` ze standardowego wejścia hooka).
+3. Jednorazowe obejście: `WORKMUX_ALLOW_PROTECTED=1 git ...`.
+4. Instalacja nie nadpisuje cudzych hooków: jeśli któryś z trzech plików istnieje i nie ma znacznika `# workmux-enforce v1`, komenda przerywa przed zapisem czegokolwiek i wskazuje plik. Własne hooki workmux są aktualizowane przy ponownym `install`.
+5. `workmux enforce status [--json]` pokazuje dla każdego hooka: `workmux` (z listą branchy), `other` (cudzy) albo `missing`. `workmux enforce uninstall` usuwa tylko hooki ze znacznikiem.
+6. `install` i `uninstall` trafiają do audit logu (`enforce install|uninstall`). Profile `safe` i `review-only` blokują `enforce uninstall`.
+7. Hooki leżą we wspólnym katalogu `.git/hooks`, więc obejmują wszystkie worktree repo. Jeśli w repo jest `core.hooksPath`, komenda odmawia i prosi o ręczną instalację.
+
+Ograniczenia (uczciwie):
+- Kto ma zapis do repo, obejdzie to: `git commit --no-verify`, `git push --no-verify`, usunięcie hooka, `git -c core.hooksPath=...`. To ochrona przed pomyłką, nie granica bezpieczeństwa.
+- `workmux merge`, `hunk commit` i inne komendy workmux uruchamiają git bez hooków (celowo), więc hooków nie dotyczą. Tam chroni `safety_profile` i guard.
+- Fast-forward merge do chronionego brancha nie uruchamia żadnego hooka po stronie klienta.
+- Hooki chronią tylko branche. Zmian w chronionych ścieżkach (`guard.protected_paths`) nie blokują.
+- Prawdziwe wymuszenie: protected branch na GitHubie / hook `pre-receive` na serwerze, na który partnerzy nie mają uprawnień zapisu. Nie robiliśmy tego.
+- W tym repo (fork) istnieją własne `pre-commit` i `pre-push`, więc `install` tu odmówi z komunikatem (zamierzone).
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -276,7 +297,8 @@ Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, pr
    - ✅ `safety_profile` w globalnym configu: ograniczenia komend workmux (patrz 3.13)
    - ✅ fail-closed: nieparsowalny global config daje `review-only` (patrz 3.13)
    - ✅ tryb Claude per profil: bez bypass permissions, zakazy raw git/gh i Edit/Write chronionych ścieżek (patrz 3.13)
-   - ⬜ wymuszenie poza workmux (protected branch, hooki serwera)
+   - ✅ hooki gita po stronie klienta: `workmux enforce install|uninstall|status` (patrz 3.19)
+   - ⬜ wymuszenie po stronie serwera (protected branch na GitHubie, `pre-receive`)
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
    - ✅ `workmux collisions [--json]`: pliki zmienione w 2+ worktree oraz branche z agentami 2+ użytkowników (patrz 3.14)
    - ✅ ostrzeżenie w dashboardzie (licznik w nagłówku) i przy `workmux add`
@@ -347,5 +369,6 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |
+| `workmux enforce` | W kopii prawdziwego repo: `workmux enforce install`, potem na `main` `git commit` i `git push origin main` mają odmówić, na innym branchu działać; `WORKMUX_ALLOW_PROTECTED=1` przepuszcza. Sprawdź repo z istniejącymi hookami (odmowa bez zmian), `core.hooksPath`, `enforce uninstall`, wpisy w audit logu oraz że `workmux merge` nadal scala do main. Przetestuj na koncie partnera z profilem `safe` (uninstall zablokowany) | Sprawdzone ręcznie na tymczasowym repo z bare remote: commit i push na main odrzucone, feature branch i obejście działają, odmowa przy cudzym hooku |
 | tryb Claude per profil | Ustaw `safety_profile: safe` i `guard.protected_paths: ['.env*']`, uruchom agenta (`workmux add`) i w panelu sprawdź `ps`/historię komendy: brak `--dangerously-skip-permissions`, jest `--disallowedTools ...`. Poproś agenta o `git push` i o edycję `.env`: oba mają zostać odrzucone. Sprawdź też `review-only` (odmowa `git commit`) i że `trusted` nic nie zmienia. Zweryfikuj składnię `Edit(**/.env*)` w swojej wersji Claude Code | Tylko testy jednostkowe `claude_args`/`strip_bypass`; nie uruchomiony prawdziwy agent |
 | nagłówek dashboardu: guard/collisions | Ustaw `guard.protected_paths` (np. `.env*`), w worktree zmień taki plik i otwórz dashboard: w nagłówku ma być `⚠ guard 1` w ciągu ~minuty. Zmień ten sam plik w drugim worktree: `collisions N`. Sprawdź, że przy zero wskaźnik znika i że dashboard nie zwalnia na dużym repo (liczenie co 60 s w tle) | Tylko test jednostkowy etykiety i budowanie; nie oglądane w prawdziwym dashboardzie |

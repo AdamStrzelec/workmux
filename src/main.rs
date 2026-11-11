@@ -13,6 +13,7 @@ mod command;
 mod config;
 mod config_yaml;
 mod creation_time;
+mod enforce;
 mod errlog;
 mod frozen_config;
 mod git;

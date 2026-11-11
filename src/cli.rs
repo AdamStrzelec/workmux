@@ -718,6 +718,12 @@ enum Commands {
         json: bool,
     },
 
+    /// Install git hooks that block commits and pushes on protected branches
+    Enforce {
+        #[command(subcommand)]
+        command: EnforceCommands,
+    },
+
     /// Save, list and restore snapshots of the current worktree
     Snapshot {
         #[command(subcommand)]
@@ -1458,6 +1464,11 @@ pub fn run() -> Result<()> {
             refresh,
         } => command::usage::run(json, tmux, refresh),
         Commands::Errors { json, last } => command::errors::run(json, last),
+        Commands::Enforce { command } => match command {
+            EnforceCommands::Install { branches } => command::enforce::install(branches),
+            EnforceCommands::Uninstall => command::enforce::uninstall(),
+            EnforceCommands::Status { json } => command::enforce::status(json),
+        },
         Commands::Snapshot { command } => match command {
             SnapshotCommands::Save { label } => command::snapshot::save(label),
             SnapshotCommands::List { json } => command::snapshot::list(json),
@@ -2217,7 +2228,7 @@ mod tests {
 }
 
 /// Subcommands of `workmux hunk`.
-#[derive(clap::Subcommand, Debug)]
+#[derive(Debug, Subcommand)]
 pub enum HunkCommand {
     /// List hunks of the working-tree diff with stable IDs
     List {
@@ -2359,6 +2370,24 @@ pub enum HunkCommand {
         #[arg(short, long)]
         message: String,
         ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum EnforceCommands {
+    /// Install pre-commit, pre-merge-commit and pre-push hooks
+    Install {
+        /// Protected branches (default: main, master and the default branch)
+        #[arg(long, value_delimiter = ',')]
+        branches: Vec<String>,
+    },
+    /// Remove the hooks installed by workmux (other hooks are left alone)
+    Uninstall,
+    /// Show which hooks are installed
+    Status {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
