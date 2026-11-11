@@ -36,6 +36,9 @@ impl App {
             AppEvent::Ports(listeners) => {
                 self.ports = listeners;
             }
+            AppEvent::Oversight(counts) => {
+                self.oversight = counts;
+            }
             AppEvent::Usage(result) => {
                 // Keep showing the previous snapshot if a refresh fails.
                 if let Ok(snapshot) = result {

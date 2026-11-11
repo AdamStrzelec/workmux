@@ -96,6 +96,9 @@ pub struct App {
     pub usage: Option<crate::usage::Snapshot>,
     /// Panics recorded since `workmux errors` was last run
     pub unseen_errors: usize,
+    /// Guard and collision counts, refreshed with the usage poll
+    pub oversight: crate::oversight::Counts,
+    is_oversight_fetching: Arc<AtomicBool>,
     /// Listening TCP ports, rescanned every few seconds.
     pub ports: Vec<crate::ports::Listener>,
     last_ports_fetch: std::time::Instant,
@@ -300,6 +303,8 @@ impl App {
             is_git_fetching: Arc::new(AtomicBool::new(false)),
             usage: crate::usage::cache::cached_snapshot(),
             unseen_errors: crate::errlog::unseen_panics(),
+            oversight: crate::oversight::Counts::default(),
+            is_oversight_fetching: Arc::new(AtomicBool::new(false)),
             ports: Vec::new(),
             last_ports_fetch: std::time::Instant::now() - PORTS_FETCH_INTERVAL,
             is_ports_fetching: Arc::new(AtomicBool::new(false)),
@@ -476,6 +481,7 @@ impl App {
             self.last_usage_fetch = std::time::Instant::now();
             self.spawn_usage_fetch();
             self.spawn_team_publish();
+            self.spawn_oversight_fetch();
             self.unseen_errors = crate::errlog::unseen_panics();
         }
 

@@ -19,6 +19,8 @@ pub enum AppEvent {
     GitStatus(PathBuf, GitStatus),
     /// Listening TCP ports (all processes)
     Ports(Vec<crate::ports::Listener>),
+    /// Guard/collision counts for the header
+    Oversight(crate::oversight::Counts),
     /// Claude plan usage snapshot (Err carries a short reason)
     Usage(Result<crate::usage::Snapshot, String>),
     /// GitHub status update for a repo root

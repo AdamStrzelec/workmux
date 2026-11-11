@@ -27,6 +27,7 @@ mod markdown;
 mod multiplexer;
 mod naming;
 mod nerdfont;
+mod oversight;
 mod ports;
 mod profile;
 mod prompt;

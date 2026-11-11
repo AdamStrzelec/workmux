@@ -254,14 +254,17 @@ Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, pr
    - ✅ `workmux guard [--json]`: globalna konfiguracja `guard.protected_paths` (wzorce glob; bez `/` dopasowanie po nazwie pliku na dowolnej głębokości, np. `.env*`; z `/` po ścieżce od roota repo, np. `secrets/**`). Dla każdego worktree pokazuje zmienione chronione pliki (commity względem bazy + niezacommitowane + nieśledzone). Kod wyjścia 2, gdy coś znaleziono. Tylko wykrywa, niczego nie blokuje ani nie cofa.
    - ✅ `workmux merge` odmawia, gdy branch zmienił chronione pliki; obejście `--allow-protected` (patrz 3.12)
    - ✅ wpisy w audit logu: `guard violation` (gdy `workmux guard` coś znajdzie) i `merge blocked (protected files)`; tylko etykieta, bez nazw plików
-   - ⬜ współdzielenie logu przez katalog team, widok w dashboardzie
+   - ✅ współdzielenie logu przez katalog team (`team.share_audit`, `workmux audit --team`, patrz 3.10)
+   - ✅ wskaźnik w nagłówku dashboardu: `⚠ guard N · collisions M` (worktree z chronionymi plikami; pliki w 2+ worktree plus branche 2+ użytkowników), odświeżany co 60 s w tle, znika gdy zero. Tylko liczby, bez nazw plików; szczegóły: `workmux guard`, `workmux collisions`
+   - ⬜ widok listy zdarzeń audit w dashboardzie
 2. **Profile bezpieczeństwa** (`safe`, `review-only`, `trusted`): jednym ustawieniem określają tryb Claude, zakazane ścieżki i politykę git.
    - ✅ `safety_profile` w globalnym configu: ograniczenia komend workmux (patrz 3.13)
    - ✅ fail-closed: nieparsowalny global config daje `review-only` (patrz 3.13)
    - ⬜ tryb Claude per profil, wymuszenie poza workmux (protected branch, hooki serwera)
 3. **Blokada kolizji**: ostrzeżenie, gdy dwie osoby edytują ten sam plik albo branch.
    - ✅ `workmux collisions [--json]`: pliki zmienione w 2+ worktree oraz branche z agentami 2+ użytkowników (patrz 3.14)
-   - ⬜ ostrzeżenie w dashboardzie i przy `workmux add`, wpis w audit logu, kolizje plików między użytkownikami (wymaga listy plików w migawce)
+   - ✅ ostrzeżenie w dashboardzie (licznik w nagłówku) i przy `workmux add`
+   - ⬜ wpis w audit logu, kolizje plików między użytkownikami (wymaga listy plików w migawce)
 4. **Handoff**: „przekaż mi tę sesję” z kontekstem i przełączeniem okna.
    - ✅ `workmux handoff [--json]`: notatka przekazania bieżącego worktree (branch, baza, commity od bazy, zmiany niezacommitowane, wszystkie zmienione pliki, liczba snapshotów) — patrz 3.16
    - ⬜ przełączenie okna tmux, dołączenie ostatnich promptów/historii rozmowy (wymaga claude-history)
@@ -328,3 +331,4 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
 | `workmux handoff` | W worktree z kilkoma commitami i niezacommitowanymi zmianami: `workmux handoff` i `--json`. Sprawdź, czy lista commitów i plików zgadza się z rzeczywistością oraz jak zachowuje się na branchu bez commitów | Sprawdzone tylko na tym repo |
 | `workmux snapshot` | W prawdziwym worktree z agentem: `snapshot save`, pozwól agentowi coś zepsuć, `snapshot restore <id>`. Sprawdź pliki nieśledzone, ignorowane (`node_modules`), usunięte, oraz `snapshot restore` w audit logu | Sprawdzone tylko na małym tymczasowym repo; nie na dużym projekcie ani z agentem |
+| nagłówek dashboardu: guard/collisions | Ustaw `guard.protected_paths` (np. `.env*`), w worktree zmień taki plik i otwórz dashboard: w nagłówku ma być `⚠ guard 1` w ciągu ~minuty. Zmień ten sam plik w drugim worktree: `collisions N`. Sprawdź, że przy zero wskaźnik znika i że dashboard nie zwalnia na dużym repo (liczenie co 60 s w tle) | Tylko test jednostkowy etykiety i budowanie; nie oglądane w prawdziwym dashboardzie |
