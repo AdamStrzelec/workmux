@@ -1,5 +1,6 @@
 //! TUI rendering logic for the dashboard.
 
+mod audit_view;
 mod config_pages;
 mod dashboard;
 mod diff;
@@ -69,6 +70,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         || app.pending_add_worktree.is_some()
         || app.pending_command_palette.is_some()
         || app.pending_row_context.is_some()
+        || app.audit_view.is_some()
         || app.error_modal.is_some();
 
     if has_modal {
@@ -105,6 +107,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         render_sweep(f, app);
     } else if app.pending_add_worktree.is_some() {
         render_add_worktree(f, app);
+    }
+
+    if app.audit_view.is_some() {
+        audit_view::render_audit_view(f, app);
     }
 
     // Errors stay on top of everything until dismissed.

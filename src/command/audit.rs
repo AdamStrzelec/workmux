@@ -23,15 +23,7 @@ pub fn run(json: bool, last: usize, team: bool) -> Result<()> {
         return Ok(());
     }
     for e in events {
-        println!(
-            "{} {} {} {}:{} {}",
-            e.ts,
-            e.user,
-            e.action,
-            e.project,
-            e.branch,
-            if e.ok { "ok" } else { "FAILED" }
-        );
+        println!("{}", audit::format_event(e));
     }
     Ok(())
 }

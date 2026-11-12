@@ -151,6 +151,44 @@ fn append(event: &Event) -> std::io::Result<()> {
     writeln!(f, "{line}")
 }
 
+/// One-line, human-readable form of an event for lists (`workmux audit`, dashboard).
+pub fn format_event(e: &Event) -> String {
+    format!(
+        "{} {} {} {}:{} {}",
+        format_ts(e.ts),
+        e.user,
+        e.action,
+        e.project,
+        e.branch,
+        if e.ok { "ok" } else { "FAILED" }
+    )
+}
+
+/// `HH:MM:SS` (UTC) plus days-ago for older events; avoids a date dependency.
+fn format_ts(ts: u64) -> String {
+    let age = now().saturating_sub(ts);
+    let tod = ts % 86400;
+    let clock = format!("{:02}:{:02}:{:02}Z", tod / 3600, tod % 3600 / 60, tod % 60);
+    match age / 86400 {
+        0 => clock,
+        d => format!("{clock} -{d}d"),
+    }
+}
+
+/// Events for the dashboard view: the shared team log when `share_audit` is
+/// on and the directory is readable, otherwise this user's local log.
+pub fn read_for_view() -> Vec<Event> {
+    let cfg = crate::config::Config::global_team_config();
+    if cfg.share_audit
+        && let Ok(dir) = crate::team::resolve_dir(&cfg)
+        && let Ok(events) = read_shared(&dir)
+        && !events.is_empty()
+    {
+        return events;
+    }
+    read_all()
+}
+
 pub fn read_all() -> Vec<Event> {
     let Some(path) = path() else {
         return Vec::new();
@@ -213,5 +251,20 @@ mod tests {
         let ts: Vec<_> = all.iter().map(|e| e.ts).collect();
         assert_eq!(ts, vec![1, 3, 5]);
         assert_eq!(shared_file_name("an/ia"), "audit-an_ia.log");
+    }
+
+    #[test]
+    fn format_event_marks_failures() {
+        let e = Event {
+            ts: 3661,
+            user: "ola".into(),
+            action: "merge blocked (protected files)".into(),
+            project: "app".into(),
+            branch: "feat".into(),
+            ok: false,
+        };
+        let line = format_event(&e);
+        assert!(line.contains("01:01:01Z"));
+        assert!(line.ends_with("app:feat FAILED"));
     }
 }

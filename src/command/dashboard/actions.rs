@@ -9,6 +9,7 @@ use super::keymap::Context;
 pub enum Action {
     // Global actions
     ShowHelp,
+    ShowAuditLog,
     ShowKeyMenu,
     Quit,
 
@@ -126,6 +127,19 @@ pub fn apply_action(app: &mut App, action: Action) -> bool {
         // Global
         Action::ShowHelp => {
             app.show_help = true;
+            false
+        }
+        Action::ShowAuditLog => {
+            let events = crate::audit::read_for_view();
+            let mut lines: Vec<String> = events
+                .iter()
+                .rev()
+                .map(crate::audit::format_event)
+                .collect();
+            if lines.is_empty() {
+                lines.push("No audit events recorded.".into());
+            }
+            app.audit_view = Some(lines);
             false
         }
         Action::ShowKeyMenu => {
@@ -531,6 +545,11 @@ fn palette_commands(ctx: Context, app: &App) -> Vec<PaletteCommand> {
                     label: "Show help",
                     key_hint: "?",
                     action: Action::ShowHelp,
+                },
+                PaletteCommand {
+                    label: "Show audit log",
+                    key_hint: "",
+                    action: Action::ShowAuditLog,
                 },
                 PaletteCommand {
                     label: "Quit",
