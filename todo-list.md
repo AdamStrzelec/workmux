@@ -264,6 +264,15 @@ Ograniczenia: bez limitu czasu i bez limitu rozmiaru diffu (cały diff idzie na 
 
 Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, prompty wpisane ręcznie w tmux i akcje z dashboardu nie robią snapshotu. Brak czyszczenia starych snapshotów, więc przy częstym `send` refy się namnażają. Na dużym repo każdy `send` trwa dłużej (skan plików).
 
+### 3.22 Automatyczny snapshot przed `workmux run` (opis szczegółowy)
+
+1. Opcja `guard.snapshot_before_run: true` w globalnym configu (domyślnie wyłączona), obok `snapshot_before_send`.
+2. Gdy włączona, `workmux run <worktree> -- <komenda>` przed uruchomieniem komendy zapisuje snapshot worktree z etykietą `before-run` (patrz 3.15), wypisuje `snapshot saved: <id>` na stderr i stosuje `guard.snapshot_keep`.
+3. Błąd snapshotu tylko ostrzega (`warning: snapshot before run failed`), komenda i tak idzie.
+4. Odtwarzanie: `workmux snapshot list` i `restore <id>` w tym worktree.
+
+Ograniczenia: tylko `workmux run`; komendy wpisane ręcznie w tmux nie robią snapshotu. Na dużym repo każdy `run` trwa dłużej (skan plików). Snapshot nie cofa commitów ani brancha.
+
 ### 3.19 Wymuszenie poza workmux `workmux enforce` (opis szczegółowy)
 
 Cel: chronić branche także wtedy, gdy ktoś (albo agent z bypass permissions) użyje gołego `git`, z pominięciem workmux.
@@ -359,7 +368,8 @@ Ograniczenia:
    - ✅ automatyczny snapshot przed `workmux send` (opcja `guard.snapshot_before_send`, patrz 3.18)
    - ✅ `workmux snapshot prune [--keep N]` (patrz 3.15)
    - ✅ automatyczne czyszczenie (`guard.snapshot_keep`, patrz 3.15)
-   - ⬜ snapshot przed `run`, snapshot commitów (reset brancha)
+   - ✅ automatyczny snapshot przed `workmux run` (opcja `guard.snapshot_before_run`, patrz 3.22)
+   - ⬜ snapshot commitów (reset brancha)
 
 5. **Hunki w dashboardzie** ❌ odpuszczone (decyzja użytkownika, niepotrzebne w UI): dashboard ma już tryb patch (staging hunk po hunku, split, undo) w `src/command/dashboard/diff_ops.rs`, więc pełny podgląd i staging w TUI byłby duplikatem. Zostaje do decyzji wąski zakres: liczba niezacommitowanych hunków per worktree w liście oraz oznaczenie chronionej gałęzi.
 
@@ -412,6 +422,7 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `team.share_audit` | Dwóch użytkowników na jednej maszynie z tym samym `team.dir` i `share_audit: true`: każdy robi komendę zmieniającą stan, potem `workmux audit --team`. Sprawdź prawa plików `audit-*.log` (grupa musi móc czytać) i że `exclude_projects` ukrywa projekt | Sprawdzone tylko lokalnie jednym użytkownikiem na tymczasowym katalogu; nie na dwóch kontach Linux ani z prawdziwą grupą |
 | `guard.review_command` | Wpisz w global config `guard: {review_command: "cat >/dev/null; exit 1"}` i `workmux merge` ma odmówić; potem `exit 0` i `--skip-review`. Sprawdź prawdziwą komendę z LLM, duży diff, merge z dashboardu (nie powinien jej uruchamiać) | Sprawdzone tylko testem jednostkowym wywołania komendy; nie e2e |
 | `guard.snapshot_before_send` | Włącz w global config, wyślij `workmux send <agent> \"...\"` do lokalnego agenta; sprawdź `snapshot saved: ...` i `snapshot list`. Zmierz czas na dużym repo | Niesprawdzone z prawdziwym agentem; tylko build i testy |
+| `guard.snapshot_before_run` | Włącz w global config, uruchom `workmux run <agent> -- ls`; sprawdź `snapshot saved: ...` i `snapshot list` (etykieta `before-run`) | Niesprawdzone z prawdziwym agentem; tylko build |
 | `snapshot prune` | W worktree z kilkoma snapshotami: `workmux snapshot prune --keep 2`, potem `snapshot list`. Sprawdź `snapshot prune` w audit logu | Sprawdzone ręcznie na tymczasowym repo (3 snapshoty, keep 1) |
 | `guard.snapshot_keep` | Ustaw `guard: {snapshot_keep: 2}`, zrób 4× `workmux snapshot save`, potem `snapshot list`: mają zostać 2 | Sprawdzone tylko ręcznie na tymczasowym repo (patrz niżej), nie z prawdziwym agentem |
 | fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
