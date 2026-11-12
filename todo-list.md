@@ -395,6 +395,12 @@ Ograniczenia: tylko `workmux run`; komendy wpisane ręcznie w tmux nie robią sn
 - Dokumentacja i CHANGELOG dla sekcji `usage`.
 - Weryfikacja powiadomień tmux przez realne SSH.
 - Opcjonalnie: zmiana etykiety powiadomień macOS z „Terminal” tylko dla alertów.
+- Sprzątanie na samym końcu (po testach i analizie z sekcji 7), w tej kolejności:
+  1. Usuń `todo-list.md` z brancha `hunk-staging` (plik nie może trafić do `adam`).
+  2. Zmerguj `hunk-staging` do `adam` bez `todo-list.md` i wypchnij `adam`.
+  3. Usuń zdalny branch: `git push origin --delete hunk-staging`. Fork jest publiczny, a `hunk-staging` został wypchnięty na `origin` jako kopia zapasowa, więc `todo-list.md` jest tam widoczny, dopóki branch nie zniknie.
+  4. Usuń lokalny branch i worktree `extra-tools` (`workmux remove` albo `git branch -D hunk-staging`).
+  5. Sprawdź `git ls-remote origin`: nie ma `hunk-staging`.
 
 ## 7. Do przetestowania przez nas (nie sprawdzone przez Claude)
 
