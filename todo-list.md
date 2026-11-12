@@ -14,9 +14,9 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 | 2 | git-surgeon | raine/git-surgeon | ✅ | `workmux hunk` (list, show, stage, unstage, discard, commit, commit-to) gotowe, z blokadą commitów na `main`/`master`/gałąź domyślną. `list --blame` gotowe. `undo`, `amend`, `reword` gotowe (z blokadą na chronionych gałęziach i na wypchniętych commitach). `fold`, `squash`, `move`, `split` gotowe. git-surgeon w całości przeniesiony. Poza zakresem: `update`, `install-skill` |
 | 3 | claude-history | raine/claude-history | 🟡 (`workmux history`, patrz 3.21; bez TUI i fuzzy) | Przeszukiwanie historii rozmów Claude, powiązanie z worktree/sesją, handoff |
 | 4 | consult-llm | raine/consult-llm | 🟡 (`workmux consult`, patrz 3.20; bez wątków, debat i monitora) | Drugi model do review; baza dla pre-merge gate (`/review-panel`) |
-| 5 | tmux-tools | raine/tmux-tools | ⬜ | Do przejrzenia, co z tego ma sens w workmux |
-| 6 | tmux-file-picker | raine/tmux-file-picker | ⬜ | Wybór plików z poziomu tmux, np. do promptów agentów |
-| 7 | tmux-bro | raine/tmux-bro | ⬜ | Do przejrzenia, co z tego ma sens w workmux |
+| 5 | tmux-tools | raine/tmux-tools | 🟡 przegląd (3.23) | Session-switcher i zoxide-window wyglądają na duplikaty dashboardu, ale najpierw porównać jakość implementacji (kod raine), dopiero potem pominąć |
+| 6 | tmux-file-picker | raine/tmux-file-picker | 🟡 przegląd (3.23) | Kandydat do wdrożenia: natywny overlay w dashboardzie z filtrem `protected_paths`. Porównać z kodem raine (podgląd, `-g`, `-d`, multi-select) |
+| 7 | tmux-bro | raine/tmux-bro | 🟡 przegląd (3.23) | Dużo pokrywa `windows`/`layouts`/`post_create`; porównać autodetekcję workspace (npm/pnpm/Cargo/venv) z naszą logiką |
 
 ## 2. Kolejność prac (ustalona)
 
@@ -337,6 +337,33 @@ Ograniczenia:
 4. Odtwarzanie: `workmux snapshot list` i `restore <id>` w tym worktree.
 
 Ograniczenia: tylko `workmux run`; komendy wpisane ręcznie w tmux nie robią snapshotu. Na dużym repo każdy `run` trwa dłużej (skan plików). Snapshot nie cofa commitów ani brancha.
+
+### 3.23 Przegląd tmux-tools, tmux-file-picker, tmux-bro (analiza, bez kodu)
+
+Źródło: README trzech repozytoriów raine (kodu skryptów jeszcze nie czytaliśmy) i porównanie z tym, co workmux już ma.
+
+Co robią:
+- **tmux-tools**: `tmux-session-switcher` (popup fzf, sesje wg ostatniego użycia), `tmux-zoxide-window` (frecent katalogi z zoxide w nowym oknie), `tmux-zoxide-session` (README go nie opisuje).
+- **tmux-file-picker**: popup fzf+fd, Enter = plik, Tab = kilka; ścieżki wklejane w kursor (np. w prompt Claude). Flagi: `-g` (względem git root), `-d` (katalogi), `--zoxide`, katalog jako argument; podgląd bat/tree; `TMUX_FILE_PICKER_FD_FLAGS`.
+- **tmux-bro**: wybór projektu (zoxide lub `projects_dir`), wykrycie npm/pnpm/yarn/Cargo/venv, sesja z layoutem, okno na pakiet w monorepo, auto-uruchomienie `dev`; config `~/.config/tmux-bro.yaml` i `.tmux-bro.yaml`.
+
+Co workmux już ma (wstępne dopasowanie):
+- przełączanie sesji i okien: dashboard, sidebar, `open`, `last-agent`, `last-done`;
+- wybór projektu: picker w dashboardzie (`P`) i `projects` w configu;
+- layouty i dev server: `panes`/`layouts`/`windows`, `post_create`, presety dev servera, `auto_port`.
+
+Wstępny werdykt (do weryfikacji):
+- Picker plików: warto. Natywny overlay w dashboardzie (bez `fd`/`fzf`), wielokrotny wybór, wklejenie ścieżek do panelu agenta, pliki z `guard.protected_paths` wykluczone z listy. Pasuje do nadzoru nad nietechnicznymi partnerami.
+- `session-switcher`, `zoxide-window`: wyglądają na duplikaty.
+- tmux-bro: autodetekcja workspace i opcjonalne `projects: auto` z zoxide to jedyne braki.
+
+**Krok obowiązkowy przed pominięciem czegokolwiek: porównanie jakości.** Ocena „duplikat” opiera się na README, a nie na kodzie. Część funkcji raine może być zrobiona lepiej niż nasze odpowiedniki (np. sortowanie sesji wg ostatniego użycia, frecency z zoxide, podgląd plików, wykrywanie monorepo). Dla każdej pozycji:
+1. Przeczytać kod skryptu raine (tylko czytanie).
+2. Zestawić z naszą implementacją: czy robi coś lepiej albo brakuje nam jego funkcji.
+3. Jeśli lepsze, przenieść lepsze rozwiązanie (do naszej logiki), jeśli nie, oznaczyć „pominięte” z jednozdaniowym uzasadnieniem.
+Dopiero wynik porównania zamyka pozycję w tabeli z sekcji 1.
+
+Kolejność: porównanie 3 narzędzi, potem overlay pickera plików, potem ewentualne dodatki z tmux-bro.
 
 ## 4. Propozycje (moje), zaakceptowane
 
