@@ -376,6 +376,17 @@ Kolejność: porównanie 3 narzędzi, potem overlay pickera plików, potem ewent
 
 Wniosek: żadna z logik raine nie jest lepsza od naszej w sesji/oknach. Lepsze są tylko: `@`-prefiks i obsługa agenta w file-pickerze, frecency zoxide, lockfile-based package manager.
 
+### 3.24 Widok orkiestratora i subagentów w dashboardzie (propozycja, bez kodu)
+
+Cel (użytkownik): gdy proces to orkiestrator + subagenci, dashboard ma pokazać, że to takie drzewo, dać podgląd pracy każdego i pokazać, jakie informacje wymieniają.
+
+Plan:
+1. Źródło danych: lokalne transkrypty Claude Code (jak `history.rs`, tylko odczyt). Orkiestrator wywołuje subagenta narzędziem `Agent`/`Task` (prompt = to, co orkiestrator mówi subagentowi), a wynik wraca jako `tool_result` (to, co subagent odpowiada). To są "wymieniane informacje".
+2. NIE ZWERYFIKOWANE: gdzie dokładnie Claude Code zapisuje transkrypty subagentów (osobne pliki czy `isSidechain` w jednym). Pierwszy krok: obejrzeć realny transkrypt z subagentami i dopiero wtedy projektować parser.
+3. Dashboard: przy agencie znacznik `⛓ N sub` (liczba aktywnych subagentów); overlay z drzewem orkiestrator -> subagenci (status, czas, ostatnia akcja); wejście w subagenta pokazuje jego ostatnie wiadomości; zakładka "wymiana" = pary prompt -> wynik.
+4. Prywatność: transkrypty mogą zawierać sekrety wklejone przez użytkownika; widok tylko lokalny, nic nie jest wysyłane ani publikowane do `team.dir` (jak 3.21).
+5. Ograniczenie: subagenci wewnątrz jednej sesji nie mają paneli tmux, więc "podgląd" to odtworzenie z transkryptu, nie żywy terminal.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
