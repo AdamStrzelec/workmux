@@ -231,7 +231,9 @@ Uzupełnienie (ostrzeżenie przy `add`): `workmux add <branch>` (bez `--dry-run`
 4. `workmux snapshot restore <id>` najpierw zapisuje obecny stan jako `before-restore` (żeby cofnięcie było możliwe), potem przywraca pliki ze snapshotu (`git read-tree --reset -u`) i zdejmuje je z indeksu.
 5. Restore trafia do audit logu jako `snapshot restore`; save i list nie.
 
-Ograniczenia: przywraca tylko pliki, nie cofa commitów ani nie przesuwa brancha. Nieśledzone pliki utworzone po snapshocie zostają (nic nie jest kasowane, poza plikami śledzonymi, których nie było w snapshocie). Snapshot jest ręczny, bez automatu i bez czyszczenia starych. Git z pominięciem hooków (jak reszta narzędzi).
+Uzupełnienie (reset brancha): `workmux snapshot restore <id> --reset-branch` oprócz plików cofa też branch do commita, na którym stał w chwili snapshotu (rodzic commita snapshotu). Używa `git reset` w trybie mixed: pliki zostają w katalogu roboczym jako niezacommitowane zmiany, indeks jest czysty. Commity zrobione po snapshocie nie przepadają: zachowuje je snapshot `before-restore` robiony przed restore (jego rodzicem jest dawny HEAD). Odmawia na `main`, `master`, domyślnym branchu i przy odłączonym HEAD. Trafia do audit logu jako `snapshot restore`. Nie wypycha niczego na zdalne repo; jeśli cofnięte commity były już wypchnięte, kolejny push będzie wymagał force (workmux go nie robi).
+
+Ograniczenia (bez `--reset-branch`): przywraca tylko pliki, nie cofa commitów ani nie przesuwa brancha. Nieśledzone pliki utworzone po snapshocie zostają (nic nie jest kasowane, poza plikami śledzonymi, których nie było w snapshocie). Snapshot jest ręczny, bez automatu i bez czyszczenia starych. Git z pominięciem hooków (jak reszta narzędzi).
 
 Uzupełnienie (czyszczenie): `workmux snapshot prune [--keep N]` (domyślnie 20) usuwa refy najstarszych snapshotów bieżącego brancha, zostawiając N najnowszych. Kasuje tylko refy; obiekty zbierze `git gc`. Wpis `snapshot prune` trafia do audit logu. Ręcznie.
 
@@ -369,7 +371,7 @@ Ograniczenia: tylko `workmux run`; komendy wpisane ręcznie w tmux nie robią sn
    - ✅ `workmux snapshot prune [--keep N]` (patrz 3.15)
    - ✅ automatyczne czyszczenie (`guard.snapshot_keep`, patrz 3.15)
    - ✅ automatyczny snapshot przed `workmux run` (opcja `guard.snapshot_before_run`, patrz 3.22)
-   - ⬜ snapshot commitów (reset brancha)
+   - ✅ cofnięcie brancha: `workmux snapshot restore <id> --reset-branch` (patrz 3.15)
 
 5. **Hunki w dashboardzie** ❌ odpuszczone (decyzja użytkownika, niepotrzebne w UI): dashboard ma już tryb patch (staging hunk po hunku, split, undo) w `src/command/dashboard/diff_ops.rs`, więc pełny podgląd i staging w TUI byłby duplikatem. Zostaje do decyzji wąski zakres: liczba niezacommitowanych hunków per worktree w liście oraz oznaczenie chronionej gałęzi.
 
@@ -423,6 +425,7 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `guard.review_command` | Wpisz w global config `guard: {review_command: "cat >/dev/null; exit 1"}` i `workmux merge` ma odmówić; potem `exit 0` i `--skip-review`. Sprawdź prawdziwą komendę z LLM, duży diff, merge z dashboardu (nie powinien jej uruchamiać) | Sprawdzone tylko testem jednostkowym wywołania komendy; nie e2e |
 | `guard.snapshot_before_send` | Włącz w global config, wyślij `workmux send <agent> \"...\"` do lokalnego agenta; sprawdź `snapshot saved: ...` i `snapshot list`. Zmierz czas na dużym repo | Niesprawdzone z prawdziwym agentem; tylko build i testy |
 | `guard.snapshot_before_run` | Włącz w global config, uruchom `workmux run <agent> -- ls`; sprawdź `snapshot saved: ...` i `snapshot list` (etykieta `before-run`) | Niesprawdzone z prawdziwym agentem; tylko build |
+| `snapshot restore --reset-branch` | W feature branchu: `snapshot save base`, zrób 2 commity, `snapshot restore <id> --reset-branch`. `git log` ma pokazać branch cofnięty, pliki jako zmiany niezacommitowane; commity wróć przez `restore` snapshotu `before-restore`. Na `main` ma odmówić | Dwa testy jednostkowe na tymczasowym repo; nie z prawdziwym agentem |
 | `snapshot prune` | W worktree z kilkoma snapshotami: `workmux snapshot prune --keep 2`, potem `snapshot list`. Sprawdź `snapshot prune` w audit logu | Sprawdzone ręcznie na tymczasowym repo (3 snapshoty, keep 1) |
 | `guard.snapshot_keep` | Ustaw `guard: {snapshot_keep: 2}`, zrób 4× `workmux snapshot save`, potem `snapshot list`: mają zostać 2 | Sprawdzone tylko ręcznie na tymczasowym repo (patrz niżej), nie z prawdziwym agentem |
 | fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
