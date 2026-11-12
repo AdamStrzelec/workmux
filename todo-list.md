@@ -22,8 +22,8 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 
 1. Stan, tokeny i alerty ✅
 2. Współdzielony stan między użytkownikami Linuksa 🔜 (`workmux team`: snapshoty w katalogu `team.dir`; ✅ publikacja automatyczna z dashboardu i filtr prywatności; zostaje aktywne okno i przełączanie)
-3. Bezpieczeństwo: profile, audit log, git-surgeon, polityki git ⬜
-4. Reszta: consult-llm, claude-history, porty/dev server, task manager ⬜
+3. Bezpieczeństwo: profile, audit log, git-surgeon, polityki git 🟡 (zrobione: audit, guard, profile, kolizje, snapshoty, handoff, enforce, consult; zostaje wymuszenie po stronie serwera, widok audit w dashboardzie, panel review)
+4. Reszta: consult-llm 🟡, claude-history 🟡, porty/dev server (✅ widok portów, ⬜ auto-wybór portu i dev server), task manager ⬜
 
 ## 3. Twoje założenia
 
@@ -244,14 +244,14 @@ Uzupełnienie (auto-czyszczenie): opcja `guard.snapshot_keep: N` w globalnym con
 3. `--json` daje te same dane maszynowo.
 4. Tylko czyta; nic nie zapisuje i nie trafia do audit logu. Git leci przez utwardzony konstruktor (bez hooków).
 
-Ograniczenia: bez treści rozmowy z agentem i bez przełączania okna tmux (czeka na claude-history). Notatka jest do skopiowania ręcznie.
+Ograniczenia: bez odpowiedzi agenta i bez przełączania okna tmux. Ostatnie prompty z rozmowy dokleja `--prompts N` (patrz 3.21). Notatka jest do skopiowania ręcznie.
 
 ### 3.17 Bramka przed mergem `guard.review_command` (opis szczegółowy)
 
 1. W globalnym configu `guard.review_command` to dowolna komenda shell, np. wywołanie consult-llm jako review-panel. Domyślnie pusta (brak bramki).
 2. `workmux merge` uruchamia ją (`sh -c`, katalog = worktree) po sprawdzeniu `protected_paths` i przed właściwym mergem. Na stdin dostaje diff `base...HEAD`; w środowisku `WORKMUX_BRANCH` i `WORKMUX_TARGET`. Wyjście komendy widać w terminalu.
 3. Kod wyjścia ≠ 0 blokuje merge i zapisuje `merge blocked (review failed)` w audit logu. `--skip-review` pomija bramkę.
-4. Sam workmux nie woła żadnego LLM: komendę wybiera użytkownik. Do consult-llm wystarczy ją tu wpisać, gdy zostanie zintegrowane (sekcja 4).
+4. Sam workmux nie woła żadnego LLM: komendę wybiera użytkownik. Gotowy `workmux consult --review` można tu wpisać (patrz 3.20).
 
 Ograniczenia: bez limitu czasu i bez limitu rozmiaru diffu (cały diff idzie na stdin). To bramka ostrzegawcza, nie granica bezpieczeństwa: użytkownik albo agent z dostępem do configu lub surowego `git merge` ją omija. Działa tylko w `workmux merge` z CLI; merge z dashboardu/sidebaru i zdalny (`homecoming`) jej nie sprawdzają.
 
@@ -358,7 +358,8 @@ Ograniczenia:
    - ✅ `workmux snapshot save [etykieta] | list [--json] | restore <id>` (patrz 3.15)
    - ✅ automatyczny snapshot przed `workmux send` (opcja `guard.snapshot_before_send`, patrz 3.18)
    - ✅ `workmux snapshot prune [--keep N]` (patrz 3.15)
-   - ⬜ snapshot przed `run`, automatyczne czyszczenie, snapshot commitów (reset brancha)
+   - ✅ automatyczne czyszczenie (`guard.snapshot_keep`, patrz 3.15)
+   - ⬜ snapshot przed `run`, snapshot commitów (reset brancha)
 
 5. **Hunki w dashboardzie** ❌ odpuszczone (decyzja użytkownika, niepotrzebne w UI): dashboard ma już tryb patch (staging hunk po hunku, split, undo) w `src/command/dashboard/diff_ops.rs`, więc pełny podgląd i staging w TUI byłby duplikatem. Zostaje do decyzji wąski zakres: liczba niezacommitowanych hunków per worktree w liście oraz oznaczenie chronionej gałęzi.
 
