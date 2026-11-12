@@ -365,6 +365,17 @@ Dopiero wynik porównania zamyka pozycję w tabeli z sekcji 1.
 
 Kolejność: porównanie 3 narzędzi, potem overlay pickera plików, potem ewentualne dodatki z tmux-bro.
 
+### 3.23a Wynik porównania kodu (tylko odczyt, WebFetch; bez uruchamiania)
+
+Źródło: skrypty raine czytane przez GitHub (część plików tylko w streszczeniu, nie dosłownie).
+
+- **tmux-session-switcher**: `list-sessions` posortowane po ostatnim attach, bez bieżącej, fzf, `switch-client`. Prosty. Dashboard i `last-agent` robią to samo i więcej (status agentów). Decyzja: POMINIĘTE (nic lepszego).
+- **tmux-zoxide-window**: `zoxide query -l | fzf`, nowe okno nazwane basename. Jedyna realna różnica: źródło katalogów z historii zoxide (frecency). Nasz `projects`/picker `P` używa listy z configu. Decyzja: opcjonalny dodatek `projects: auto` z zoxide (do zrobienia razem z tmux-bro extras).
+- **tmux-file-picker**: fd + fzf, podgląd (tree/bat), `-g` ścieżki względem git root, `-d` katalogi, `--zoxide`, `--include-ignored`, `TMUX_FILE_PICKER_FD_FLAGS`, wykrywa agenta w panelu (Claude/Gemini/Codex/pi) i dodaje prefiks `@`, wpisuje ścieżki przez `send-keys` z escapowaniem. Lepsze od naszego (którego nie ma): prefiks `@` dla agenta, bracketed paste, escapowanie. Decyzja: PORTOWAĆ jako overlay dashboardu + filtr `guard.protected_paths` + prefiks `@`.
+- **tmux-bro**: `workspace.py` wykrywa pnpm/npm/Cargo workspaces (nie venv), kolejność pnpm>npm>cargo; wykrywa package managera po lockfile. Słabości u raine: błędy połykane, brak `**`, brak `exclude`/negacji, Cargo bez globów, brak deduplikacji. `fuzzy.py` tylko fzf + zoxide (bez własnego rankingu, martwy kod, fallback `find` nie zadziała). `main.py`: sesja = basename, reuse jeśli istnieje, attach/switch. Decyzja: nasze `windows`/`layouts`/`post_create` pokrywają sesję; wykrywanie workspace i package managera z lockfile PORTOWAĆ (z globami, dedup, bez połykania błędów); reszta POMINIĘTA.
+
+Wniosek: żadna z logik raine nie jest lepsza od naszej w sesji/oknach. Lepsze są tylko: `@`-prefiks i obsługa agenta w file-pickerze, frecency zoxide, lockfile-based package manager.
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
