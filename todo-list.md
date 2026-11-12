@@ -2,6 +2,8 @@
 
 Status: ✅ zrobione · 🔜 następne · ⬜ zaplanowane · 💡 propozycja do decyzji
 
+> **Plan końcowy:** po wdrożeniu zmian z tego brancha przetestujemy i przeanalizujemy wszystko, co jest opisane w tym pliku (sekcja 7 to lista testów). Dopiero po analizie i testach, tuż przed ostatecznym zakończeniem prac, usuwamy ten plik (`todo-list.md`). Plik jest dokumentem roboczym: nie jest włączany do brancha `adam` ani wypychany razem z kodem (merge do `adam` robimy bez niego).
+
 ## 1. Narzędzia od autora workmux (raine)
 
 Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzędzie dodajemy osobno, krok po kroku.
