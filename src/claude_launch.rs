@@ -288,8 +288,14 @@ pub fn session_to_resume(
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ToolConfig {
     pub key: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub command: String,
+    /// Ready-made defaults (`nextjs`, `vite`, `react`, `storybook`). Fills
+    /// name, command, port and `auto_port` that are not set explicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
     /// Port the tool listens on; a warning is shown when it is already taken.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
@@ -299,7 +305,46 @@ pub struct ToolConfig {
     pub auto_port: bool,
 }
 
+/// Built-in dev server presets: `(name, command, port)`. `{port}` is
+/// replaced by the chosen port when `auto_port` is on.
+pub const TOOL_PRESETS: &[(&str, &str, u16)] = &[
+    ("nextjs", "npm run dev -- --port {port}", 3000),
+    ("vite", "npm run dev -- --port {port}", 5173),
+    ("react", "npm start", 3000),
+    ("storybook", "npm run storybook -- --port {port} --ci", 6006),
+];
+
 impl ToolConfig {
+    /// Fill unset fields from the named preset, then drop the `preset` field.
+    pub fn resolve_preset(&mut self) -> Result<(), String> {
+        if let Some(name) = self.preset.take() {
+            let (_, command, port) = TOOL_PRESETS
+                .iter()
+                .find(|(n, _, _)| *n == name)
+                .ok_or_else(|| {
+                    let known: Vec<&str> = TOOL_PRESETS.iter().map(|p| p.0).collect();
+                    format!("unknown tool preset '{name}' (known: {})", known.join(", "))
+                })?;
+            if self.name.trim().is_empty() {
+                self.name = name;
+            }
+            if self.command.trim().is_empty() {
+                self.command = command.to_string();
+            }
+            if self.port.is_none() {
+                self.port = Some(*port);
+                self.auto_port = true;
+            }
+        }
+        if self.name.trim().is_empty() || self.command.trim().is_empty() {
+            return Err(format!(
+                "tool '{}' needs a name and a command (or a preset)",
+                self.key
+            ));
+        }
+        Ok(())
+    }
+
     pub fn key_char(&self) -> Option<char> {
         let mut chars = self.key.chars();
         match (chars.next(), chars.next()) {
@@ -331,7 +376,7 @@ enum ToolsRepr {
 
 impl<'de> Deserialize<'de> for ToolsConfig {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Ok(match ToolsRepr::deserialize(d)? {
+        let mut cfg = match ToolsRepr::deserialize(d)? {
             ToolsRepr::List(items) => ToolsConfig {
                 items,
                 close_with_session: None,
@@ -343,7 +388,11 @@ impl<'de> Deserialize<'de> for ToolsConfig {
                 items,
                 close_with_session,
             },
-        })
+        };
+        for t in &mut cfg.items {
+            t.resolve_preset().map_err(serde::de::Error::custom)?;
+        }
+        Ok(cfg)
     }
 }
 
@@ -621,6 +670,22 @@ mod tests {
     }
 
     #[test]
+    fn preset_fills_unset_fields_and_overrides_win() {
+        let t: ToolsConfig = serde_yaml::from_str(
+            "- { key: d, preset: nextjs }\n- { key: s, preset: storybook, port: 7000, name: sb }\n",
+        )
+        .unwrap();
+        assert_eq!(t.items[0].name, "nextjs");
+        assert_eq!(t.items[0].port, Some(3000));
+        assert!(t.items[0].auto_port);
+        assert!(t.items[0].command.contains("{port}"));
+        assert_eq!(t.items[1].name, "sb");
+        assert_eq!(t.items[1].port, Some(7000));
+        assert!(serde_yaml::from_str::<ToolsConfig>("- { key: x, preset: nope }").is_err());
+        assert!(serde_yaml::from_str::<ToolsConfig>("- { key: x }").is_err());
+    }
+
+    #[test]
     fn tools_serialize_round_trip() {
         let mut t = ToolsConfig {
             items: vec![ToolConfig {
@@ -629,6 +694,7 @@ mod tests {
                 command: "npm run dev".into(),
                 port: None,
                 auto_port: false,
+                preset: None,
             }],
             close_with_session: None,
         };

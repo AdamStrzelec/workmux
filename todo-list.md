@@ -23,7 +23,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 1. Stan, tokeny i alerty ✅
 2. Współdzielony stan między użytkownikami Linuksa 🔜 (`workmux team`: snapshoty w katalogu `team.dir`; ✅ publikacja automatyczna z dashboardu i filtr prywatności; zostaje aktywne okno i przełączanie)
 3. Bezpieczeństwo: profile, audit log, git-surgeon, polityki git 🟡 (zrobione: audit, guard, profile, kolizje, snapshoty, handoff, enforce, consult; zostaje wymuszenie po stronie serwera, widok audit w dashboardzie, panel review)
-4. Reszta: consult-llm 🟡, claude-history 🟡, porty/dev server (✅ widok portów, ✅ auto-wybór portu, ⬜ gotowe skróty startu dev servera), task manager ⬜
+4. Reszta: consult-llm 🟡, claude-history 🟡, porty/dev server (✅ widok portów, ✅ auto-wybór portu, ✅ presety dev servera), task manager ⬜
 
 ## 3. Twoje założenia
 
@@ -37,7 +37,7 @@ Decyzja: implementacja natywnie w Rust, bez zewnętrznych binarek. Każde narzę
 
 ### 3.2 Porty i dev server
 - Widok zajętych portów: kto je zajął i co tam działa. ✅ (`workmux ports`, kolumna w dashboardzie, ostrzeżenie o zajętym porcie)
-- Gotowe skróty startu projektu (React, Next.js, Storybook itd.).
+- Gotowe skróty startu projektu (React, Next.js, Storybook itd.). ✅ (`preset: nextjs|vite|react|storybook` przy narzędziu w `tools:`; uzupełnia nazwę, komendę, port i `auto_port`, a jawnie podane pola mają pierwszeństwo. Nieznany preset to błąd configu z listą znanych.)
 - Automatyczny wybór wolnego portu. ✅ (`auto_port: true` przy narzędziu z `port:`; zajęty port zastępuje następny wolny, `{port}` w komendzie jest podmieniane, a przed komendą dopisywane jest `PORT=<n>`. Szuka do 100 portów w górę, sprawdza też bind na 127.0.0.1. Działa tylko przy starcie z dashboardu. Przy `auto_port` nie ma okna z ostrzeżeniem.)
 - Automatyczny port forwarding przy SSH. Ustalenie: konfiguruje to po swojej stronie każdy użytkownik.
 - Automatyczne testy jednostkowe w locie.
@@ -427,6 +427,7 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | `guard.snapshot_before_run` | Włącz w global config, uruchom `workmux run <agent> -- ls`; sprawdź `snapshot saved: ...` i `snapshot list` (etykieta `before-run`) | Niesprawdzone z prawdziwym agentem; tylko build |
 | `snapshot restore --reset-branch` | W feature branchu: `snapshot save base`, zrób 2 commity, `snapshot restore <id> --reset-branch`. `git log` ma pokazać branch cofnięty, pliki jako zmiany niezacommitowane; commity wróć przez `restore` snapshotu `before-restore`. Na `main` ma odmówić | Dwa testy jednostkowe na tymczasowym repo; nie z prawdziwym agentem |
 | `auto_port: true` przy narzędziu z `port:` | W `.workmux.yaml` ustaw narzędzie `{key: d, name: dev, command: "npm run dev", port: 3000, auto_port: true}`. Zajmij port 3000 (`nc -l 3000`), uruchom narzędzie z dashboardu: komenda ma iść z `PORT=3001`. Z `{port}` w komendzie ma być podmieniony | Testy jednostkowe `pick_free` i `apply_port`; nie z prawdziwym dev serverem w tmux |
+| `preset:` w `tools:` | `- {key: d, preset: nextjs}` w `.workmux.yaml` w prawdziwym projekcie z `npm run dev`; uruchom z dashboardu, serwer ma wstać na 3000 lub następnym wolnym. Sprawdź też `vite`, `react`, `storybook` i błąd przy literówce | Testy jednostkowe parsowania; presety (komendy, porty) nie były uruchamiane na prawdziwych projektach |
 | `snapshot prune` | W worktree z kilkoma snapshotami: `workmux snapshot prune --keep 2`, potem `snapshot list`. Sprawdź `snapshot prune` w audit logu | Sprawdzone ręcznie na tymczasowym repo (3 snapshoty, keep 1) |
 | `guard.snapshot_keep` | Ustaw `guard: {snapshot_keep: 2}`, zrób 4× `workmux snapshot save`, potem `snapshot list`: mają zostać 2 | Sprawdzone tylko ręcznie na tymczasowym repo (patrz niżej), nie z prawdziwym agentem |
 | fail-closed profilu | Zepsuj globalny config (np. `safety_profile: [oops`): `merge`/`remove`/`rebase` mają odmówić z podaniem błędu, a `list`/`status` działać. Napraw plik i sprawdź powrót do normy. Sprawdź, czy dashboard/sidebar nie ma własnej ścieżki merge omijającej profil | Sprawdzone ręcznie z `XDG_CONFIG_HOME` na `merge` i `snapshot list` |
