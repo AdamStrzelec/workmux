@@ -293,6 +293,10 @@ pub struct ToolConfig {
     /// Port the tool listens on; a warning is shown when it is already taken.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
+    /// When `port` is taken, start the tool on the next free port instead.
+    /// `{port}` in the command is replaced and `PORT` is set for the command.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_port: bool,
 }
 
 impl ToolConfig {
@@ -624,6 +628,7 @@ mod tests {
                 name: "dev".into(),
                 command: "npm run dev".into(),
                 port: None,
+                auto_port: false,
             }],
             close_with_session: None,
         };

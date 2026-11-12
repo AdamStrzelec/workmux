@@ -105,7 +105,7 @@ impl App {
         let menu = self.pending_tool_menu.take().expect("menu checked above");
         let tool = menu.tools[idx].clone();
         // Busy port: warn (modal) but start anyway; dev servers often pick another port.
-        let busy = tool.port.and_then(|port| {
+        let busy = tool.port.filter(|_| !tool.auto_port).and_then(|port| {
             let full = crate::multiplexer::util::prefixed(
                 self.config.window_prefix(),
                 &tool_window_name(&menu.handle, &tool.name),
@@ -164,7 +164,17 @@ impl App {
                 })?,
         };
         if !tool.command.trim().is_empty() {
-            self.mux.send_keys(&pane, tool.command.trim())?;
+            let command = match tool.port.filter(|_| tool.auto_port) {
+                Some(port) => {
+                    let taken = crate::ports::taken_ports(&crate::ports::scan());
+                    match crate::ports::pick_free(port, &taken) {
+                        Some(free) => crate::ports::apply_port(tool.command.trim(), port, free),
+                        None => tool.command.trim().to_string(),
+                    }
+                }
+                None => tool.command.trim().to_string(),
+            };
+            self.mux.send_keys(&pane, &command)?;
         }
         self.mux
             .select_window_target(&WindowTarget::new(full, session))?;
@@ -288,11 +298,13 @@ mod tests {
                     name: "dev".into(),
                     command: "npm run dev".into(),
                     port: None,
+                    auto_port: false,
                 },
                 ToolConfig {
                     key: "t".into(),
                     name: "test".into(),
                     port: None,
+                    auto_port: false,
                     command: "npm test".into(),
                 },
             ],
