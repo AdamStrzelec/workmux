@@ -1049,6 +1049,23 @@ pub struct Config {
     #[serde(default)]
     pub usage: crate::usage::alert::UsageConfig,
 
+    /// Shared team view (`workmux team`). Global config only: the shared
+    /// directory is a machine-level setting.
+    #[serde(default)]
+    pub team: crate::team::TeamConfig,
+
+    /// Safety profile (`trusted`, `safe`, `review-only`). Global config only.
+    #[serde(default)]
+    pub safety_profile: crate::profile::Profile,
+
+    /// Protected paths (`workmux guard`). Global config only.
+    #[serde(default)]
+    pub guard: crate::guard::GuardConfig,
+
+    /// Second-opinion command (`workmux consult`). Global config only.
+    #[serde(default)]
+    pub consult: crate::consult::ConsultConfig,
+
     /// Whether to use nerdfont icons (None = prompt user on first run)
     #[serde(default)]
     pub nerdfont: Option<bool>,
@@ -3194,6 +3211,42 @@ impl Config {
                 Default::default()
             }
         }
+    }
+
+    /// `team` section of the global config; defaults when absent or invalid.
+    pub fn global_team_config() -> crate::team::TeamConfig {
+        Self::load_global()
+            .ok()
+            .flatten()
+            .map(|c| c.team)
+            .unwrap_or_default()
+    }
+
+    /// Safety profile from the global config; `trusted` when absent or invalid.
+    pub fn global_safety_profile() -> (crate::profile::Profile, Option<String>) {
+        crate::profile::resolve(
+            Self::load_global()
+                .map(|c| c.map(|c| c.safety_profile))
+                .map_err(|e| format!("{e:#}")),
+        )
+    }
+
+    /// `consult` section of the global config; defaults when absent or invalid.
+    pub fn global_consult_config() -> crate::consult::ConsultConfig {
+        Self::load_global()
+            .ok()
+            .flatten()
+            .map(|c| c.consult)
+            .unwrap_or_default()
+    }
+
+    /// `guard` section of the global config; defaults when absent or invalid.
+    pub fn global_guard_config() -> crate::guard::GuardConfig {
+        Self::load_global()
+            .ok()
+            .flatten()
+            .map(|c| c.guard)
+            .unwrap_or_default()
     }
 
     /// `worktree_dir` from the global config file, if set.

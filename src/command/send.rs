@@ -26,6 +26,21 @@ pub struct WaitFor {
     pub timeout: Option<Duration>,
 }
 
+/// Save a snapshot of `path` when `guard.snapshot_before_send` is on. A
+/// failure only warns: it must not stop the prompt from being sent.
+fn snapshot_before_send(path: &std::path::Path) {
+    if !config::Config::global_guard_config().snapshot_before_send {
+        return;
+    }
+    match crate::snapshot::save(path, "before-send") {
+        Ok(s) => {
+            eprintln!("snapshot saved: {}", s.id);
+            crate::snapshot::auto_prune(path);
+        }
+        Err(e) => eprintln!("warning: snapshot before send failed: {e:#}"),
+    }
+}
+
 pub fn run(
     name: &str,
     text: Option<&str>,
@@ -46,6 +61,7 @@ pub fn run(
             send_remote(&cfg, record, pane, &content, wait.is_some())?
         }
         AgentTarget::Local(agent) => {
+            snapshot_before_send(&agent.path);
             send_local(&cfg, mux.as_ref(), agent, &content, wait.is_some())?
         }
     };

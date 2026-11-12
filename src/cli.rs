@@ -500,6 +500,14 @@ enum Commands {
         /// Show a system notification on successful merge
         #[arg(long)]
         notification: bool,
+
+        /// Merge even if the branch changed files matching guard.protected_paths
+        #[arg(long)]
+        allow_protected: bool,
+
+        /// Merge without running guard.review_command
+        #[arg(long)]
+        skip_review: bool,
     },
 
     /// Rebase a worktree branch onto its base branch
@@ -671,6 +679,12 @@ enum Commands {
         all: bool,
     },
 
+    /// Hunk-level git operations (list, stage, commit, commit-to) for agents
+    Hunk {
+        #[command(subcommand)]
+        command: HunkCommand,
+    },
+
     /// Show Claude plan usage limits (5h session and weekly windows)
     Usage {
         /// Output as JSON
@@ -684,6 +698,100 @@ enum Commands {
         /// Bypass the cache and query the API now
         #[arg(long)]
         refresh: bool,
+    },
+
+    /// Show the local journal of panics and failed commands
+    Errors {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Show only the newest N entries
+        #[arg(long, default_value_t = 20)]
+        last: usize,
+    },
+
+    /// Print a hand-off note for the current worktree (branch, commits, changed files)
+    Handoff {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Include the last N prompts typed to the agent in this worktree (0 = none)
+        #[arg(long, default_value_t = 0)]
+        prompts: usize,
+    },
+
+    /// Search and read local Claude Code conversations
+    History {
+        #[command(subcommand)]
+        command: HistoryCommands,
+    },
+
+    /// Ask another model about files or the branch diff (consult.command)
+    Consult {
+        /// Question (or pipe it on stdin)
+        question: Option<String>,
+        /// File to include (repeatable; protected files are left out)
+        #[arg(short, long)]
+        file: Vec<String>,
+        /// Include the branch diff against the default branch
+        #[arg(long)]
+        diff: bool,
+        /// Review mode: exit 1 unless the answer starts with APPROVE
+        #[arg(long)]
+        review: bool,
+    },
+
+    /// Install git hooks that block commits and pushes on protected branches
+    Enforce {
+        #[command(subcommand)]
+        command: EnforceCommands,
+    },
+
+    /// Save, list and restore snapshots of the current worktree
+    Snapshot {
+        #[command(subcommand)]
+        command: SnapshotCommands,
+    },
+
+    /// Report changes to protected paths (guard.protected_paths) per worktree
+    Guard {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Report files changed in several worktrees and branches shared by several users
+    Collisions {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show the local audit log of state-changing commands
+    Audit {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Show only the newest N entries
+        #[arg(long, default_value_t = 30)]
+        last: usize,
+
+        /// Read the events all users share in the team dir (`team.share_audit`)
+        #[arg(long)]
+        team: bool,
+    },
+
+    /// Show what everyone sharing the team directory is working on
+    Team {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Only read; do not publish this user's snapshot first
+        #[arg(long)]
+        no_publish: bool,
     },
 
     /// Wait for agents to reach a target status
@@ -1301,6 +1409,8 @@ pub fn run() -> Result<()> {
             no_verify,
             no_hooks,
             notification,
+            allow_protected,
+            skip_review,
         } => command::merge::run(
             name.as_deref(),
             into.as_deref(),
@@ -1312,6 +1422,8 @@ pub fn run() -> Result<()> {
             no_verify,
             no_hooks,
             notification,
+            allow_protected,
+            skip_review,
         ),
         Commands::Rebase { name } => command::rebase::run(name.as_deref()),
         Commands::Remove {
@@ -1369,11 +1481,49 @@ pub fn run() -> Result<()> {
             git,
         } => command::status::run(&worktrees, json, all, git),
         Commands::Ports { json, all } => command::ports::run(json, all),
+        Commands::Hunk { command } => command::hunk::run(command),
         Commands::Usage {
             json,
             tmux,
             refresh,
         } => command::usage::run(json, tmux, refresh),
+        Commands::Errors { json, last } => command::errors::run(json, last),
+        Commands::History { command } => match command {
+            HistoryCommands::Search {
+                query,
+                all,
+                limit,
+                json,
+            } => command::history::list(query, all, limit, json),
+            HistoryCommands::Show {
+                id,
+                all,
+                last,
+                json,
+            } => command::history::show(&id, all, last, json),
+        },
+        Commands::Consult {
+            question,
+            file,
+            diff,
+            review,
+        } => command::consult::run(question, file, diff, review),
+        Commands::Enforce { command } => match command {
+            EnforceCommands::Install { branches } => command::enforce::install(branches),
+            EnforceCommands::Uninstall => command::enforce::uninstall(),
+            EnforceCommands::Status { json } => command::enforce::status(json),
+        },
+        Commands::Snapshot { command } => match command {
+            SnapshotCommands::Save { label } => command::snapshot::save(label),
+            SnapshotCommands::List { json } => command::snapshot::list(json),
+            SnapshotCommands::Prune { keep } => command::snapshot::prune(keep),
+            SnapshotCommands::Restore { id } => command::snapshot::restore(&id),
+        },
+        Commands::Guard { json } => command::guard::run(json),
+        Commands::Handoff { json, prompts } => command::handoff::run(json, prompts),
+        Commands::Collisions { json } => command::collisions::run(json),
+        Commands::Audit { json, last, team } => command::audit::run(json, last, team),
+        Commands::Team { json, no_publish } => command::team::run(json, no_publish),
         Commands::Wait {
             worktrees,
             status,
@@ -2119,4 +2269,225 @@ mod tests {
         assert!(output.contains("__workmux_handles"));
         assert!(output.contains("__workmux_git_branches"));
     }
+}
+
+/// Subcommands of `workmux hunk`.
+#[derive(Debug, Subcommand)]
+pub enum HunkCommand {
+    /// List hunks of the working-tree diff with stable IDs
+    List {
+        /// List staged hunks (git diff --cached)
+        #[arg(long)]
+        staged: bool,
+        /// Only hunks of this file
+        #[arg(long)]
+        file: Option<String>,
+        /// List hunks of a commit instead
+        #[arg(long, conflicts_with = "staged")]
+        commit: Option<String>,
+        /// Show every line with its hunk-relative number
+        #[arg(long)]
+        full: bool,
+        /// Show which commit introduced each line (takes precedence over --full)
+        #[arg(long)]
+        blame: bool,
+    },
+    /// Show one hunk with line numbers
+    Show {
+        id: String,
+        /// Look the hunk up in this commit
+        #[arg(long)]
+        commit: Option<String>,
+    },
+    /// Stage hunks by ID
+    Stage {
+        ids: Vec<String>,
+        /// Hunk-relative line range (e.g. 5-30), single hunk only
+        #[arg(long, value_parser = crate::hunk::parse_line_range)]
+        lines: Option<(usize, usize)>,
+    },
+    /// Unstage hunks by ID
+    Unstage {
+        ids: Vec<String>,
+        #[arg(long, value_parser = crate::hunk::parse_line_range)]
+        lines: Option<(usize, usize)>,
+    },
+    /// Discard working-tree changes of hunks (not recoverable)
+    Discard {
+        ids: Vec<String>,
+        #[arg(long, value_parser = crate::hunk::parse_line_range)]
+        lines: Option<(usize, usize)>,
+    },
+    /// Commit hunks (IDs may carry ranges, e.g. abc1234:5-10)
+    Commit {
+        /// Commit message
+        #[arg(short, long)]
+        message: String,
+        ids: Vec<String>,
+    },
+    /// Reverse-apply hunks of an earlier commit onto the working tree
+    Undo {
+        ids: Vec<String>,
+        /// Commit the hunks come from (see 'hunk list --commit')
+        #[arg(long)]
+        from: String,
+        /// Hunk-relative line range (e.g. 5-30), single hunk only
+        #[arg(long, value_parser = crate::hunk::parse_line_range)]
+        lines: Option<(usize, usize)>,
+    },
+    /// Fold the staged changes into an earlier commit
+    Amend {
+        /// Commit to amend (HEAD, a SHA, HEAD~2, ...)
+        commit: String,
+        /// Allow rewriting a commit that is already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Change the message of an earlier commit
+    Reword {
+        /// Commit to reword (HEAD, a SHA, HEAD~2, ...)
+        commit: String,
+        /// New message; repeat for subject and body paragraphs
+        #[arg(short, long, required = true)]
+        message: Vec<String>,
+        /// Allow rewriting a commit that is already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Fold existing commits (default: HEAD) into an earlier commit
+    Fold {
+        /// Commit that receives the changes
+        target: String,
+        /// Commits to fold in (default: HEAD)
+        #[arg(long, num_args = 1..)]
+        from: Vec<String>,
+        /// Allow rewriting commits that are already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Combine COMMIT through HEAD into a single commit
+    Squash {
+        commit: String,
+        /// New message; repeat for subject and body paragraphs
+        #[arg(short, long, required = true)]
+        message: Vec<String>,
+        /// Squash even if the range contains merge commits
+        #[arg(long)]
+        force: bool,
+        /// Use the current user as author instead of the oldest commit's author
+        #[arg(long)]
+        no_preserve_author: bool,
+        /// Allow rewriting commits that are already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Move a commit to a different position in history
+    Move {
+        commit: String,
+        /// Place it right after this commit
+        #[arg(long, conflicts_with_all = ["before", "to_end"])]
+        after: Option<String>,
+        /// Place it right before this commit
+        #[arg(long, conflicts_with = "to_end")]
+        before: Option<String>,
+        /// Place it at the end of the branch
+        #[arg(long)]
+        to_end: bool,
+        /// Allow rewriting commits that are already on a remote branch
+        #[arg(long)]
+        allow_pushed: bool,
+    },
+    /// Split a commit into several: split REV --pick ID... -m MSG [--pick ...] [--rest-message MSG]
+    Split {
+        /// Commit to split (HEAD, a SHA, HEAD~2, ...)
+        commit: String,
+        /// `--pick ID[:ranges]... -m MSG [-m BODY]` once per new commit, then optionally
+        /// `--rest-message MSG` for the remaining changes and `--allow-pushed`
+        #[arg(allow_hyphen_values = true, num_args = 1.., required = true)]
+        args: Vec<String>,
+    },
+    /// Commit hunks to another branch without checking it out
+    CommitTo {
+        /// Target branch
+        branch: String,
+        /// Commit message
+        #[arg(short, long)]
+        message: String,
+        ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HistoryCommands {
+    /// List conversations of this project, optionally only those mentioning QUERY
+    Search {
+        /// Case-insensitive text to look for in messages
+        query: Option<String>,
+        /// Search every project, not only the current worktree
+        #[arg(long)]
+        all: bool,
+        /// Maximum conversations listed
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the messages of one conversation (id or unique prefix)
+    Show {
+        id: String,
+        /// Look in every project, not only the current worktree
+        #[arg(long)]
+        all: bool,
+        /// Only the last N messages
+        #[arg(long, default_value_t = 30)]
+        last: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum EnforceCommands {
+    /// Install pre-commit, pre-merge-commit and pre-push hooks
+    Install {
+        /// Protected branches (default: main, master and the default branch)
+        #[arg(long, value_delimiter = ',')]
+        branches: Vec<String>,
+    },
+    /// Remove the hooks installed by workmux (other hooks are left alone)
+    Uninstall,
+    /// Show which hooks are installed
+    Status {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SnapshotCommands {
+    /// Save the working tree (tracked, modified and untracked files)
+    Save {
+        /// Optional label, e.g. "before-agent"
+        label: Option<String>,
+    },
+    /// List snapshots of the current branch
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete old snapshots of the current branch, keeping the newest N
+    Prune {
+        /// How many of the newest snapshots to keep
+        #[arg(long, default_value_t = 20)]
+        keep: usize,
+    },
+    /// Restore the working tree to a snapshot (current state is saved first)
+    Restore {
+        /// Snapshot id from `workmux snapshot list`
+        id: String,
+    },
 }

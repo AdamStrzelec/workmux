@@ -47,7 +47,7 @@ fn render_tab_header(f: &mut Frame, app: &App, area: Rect) {
         rule_style,
     ));
 
-    let usage_line = usage_header_line(app);
+    let usage_line = header_right_line(app);
 
     if app.show_sidebar_tip {
         let tip_new = Style::default().fg(app.palette.header);
@@ -80,6 +80,33 @@ fn render_tab_header(f: &mut Frame, app: &App, area: Rect) {
     } else {
         f.render_widget(Paragraph::new(vec![Line::from(tabs_spans), rule]), area);
     }
+}
+
+/// Right side of the header: a quiet error marker, then usage.
+fn header_right_line(app: &App) -> Option<Line<'static>> {
+    let usage = usage_header_line(app);
+    let oversight = crate::oversight::label(&app.oversight);
+    if app.unseen_errors == 0 && oversight.is_none() {
+        return usage;
+    }
+    let mut spans = Vec::new();
+    if let Some(text) = oversight {
+        spans.push(Span::styled(text, Style::default().fg(app.palette.warning)));
+    }
+    if app.unseen_errors > 0 {
+        if !spans.is_empty() {
+            spans.push(Span::styled("  ", Style::default()));
+        }
+        spans.push(Span::styled(
+            format!("\u{26a0} {} (workmux errors)", app.unseen_errors),
+            Style::default().fg(app.palette.warning),
+        ));
+    }
+    if let Some(line) = usage {
+        spans.push(Span::styled("  ", Style::default()));
+        spans.extend(line.spans);
+    }
+    Some(Line::from(spans))
 }
 
 /// `5h 28% · 7d 63%`, coloured by utilization. None until a snapshot exists.
