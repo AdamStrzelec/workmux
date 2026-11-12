@@ -1517,7 +1517,9 @@ pub fn run() -> Result<()> {
             SnapshotCommands::Save { label } => command::snapshot::save(label),
             SnapshotCommands::List { json } => command::snapshot::list(json),
             SnapshotCommands::Prune { keep } => command::snapshot::prune(keep),
-            SnapshotCommands::Restore { id } => command::snapshot::restore(&id),
+            SnapshotCommands::Restore { id, reset_branch } => {
+                command::snapshot::restore(&id, reset_branch)
+            }
         },
         Commands::Guard { json } => command::guard::run(json),
         Commands::Handoff { json, prompts } => command::handoff::run(json, prompts),
@@ -2489,5 +2491,10 @@ pub enum SnapshotCommands {
     Restore {
         /// Snapshot id from `workmux snapshot list`
         id: String,
+        /// Also move the branch back to the commit it had at snapshot time
+        /// (refused on main/master/default branch; undone commits stay in the
+        /// `before-restore` snapshot)
+        #[arg(long)]
+        reset_branch: bool,
     },
 }

@@ -498,6 +498,8 @@ mod tests {
                 name: "dev".into(),
                 command: "x".into(),
                 port: None,
+                auto_port: false,
+                preset: None,
             }],
             close_with_session: None,
         });

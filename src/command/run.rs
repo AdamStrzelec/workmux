@@ -25,6 +25,21 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// Save a snapshot of `path` when `guard.snapshot_before_run` is on. A
+/// failure only warns: it must not stop the command from running.
+fn snapshot_before_run(path: &std::path::Path) {
+    if !crate::config::Config::global_guard_config().snapshot_before_run {
+        return;
+    }
+    match crate::snapshot::save(path, "before-run") {
+        Ok(s) => {
+            eprintln!("snapshot saved: {}", s.id);
+            crate::snapshot::auto_prune(path);
+        }
+        Err(e) => eprintln!("warning: snapshot before run failed: {e:#}"),
+    }
+}
+
 pub fn run(
     worktree_name: &str,
     command_parts: Vec<String>,
@@ -40,6 +55,8 @@ pub fn run(
 
     // Resolve worktree to agent pane (consistent with send/capture)
     let (worktree_path, agent) = workflow::resolve_worktree_agent(worktree_name, mux.as_ref())?;
+
+    snapshot_before_run(&worktree_path);
 
     // Build command string (preserve argument boundaries via shell escaping)
     let command = command_parts

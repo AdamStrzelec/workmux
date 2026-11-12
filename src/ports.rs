@@ -210,6 +210,29 @@ pub fn busy_warning(listeners: &[Listener], port: u16, tool: &str) -> Option<Str
     ))
 }
 
+/// Ports currently held by a listener, plus ports a bind attempt rejects.
+pub fn taken_ports(listeners: &[Listener]) -> std::collections::HashSet<u16> {
+    listeners.iter().map(|l| l.port).collect()
+}
+
+/// First port from `preferred` upward (at most 100 tries) that is not in
+/// `taken` and can be bound on localhost.
+pub fn pick_free(preferred: u16, taken: &std::collections::HashSet<u16>) -> Option<u16> {
+    (preferred..=preferred.saturating_add(100))
+        .find(|p| !taken.contains(p) && std::net::TcpListener::bind(("127.0.0.1", *p)).is_ok())
+}
+
+/// Command to run for a tool whose preferred port is `wanted` and chosen port
+/// is `chosen`: `{port}` is replaced; when the port moved, `PORT=<chosen>` is
+/// also set so frameworks that read it follow.
+pub fn apply_port(command: &str, wanted: u16, chosen: u16) -> String {
+    let replaced = command.replace("{port}", &chosen.to_string());
+    if chosen == wanted && replaced == command {
+        return replaced;
+    }
+    format!("PORT={chosen} {replaced}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,5 +295,29 @@ mod tests {
             Some(("s".to_string(), "w".to_string()))
         );
         assert_eq!(pane_of(40, &parents, &panes), None);
+    }
+
+    #[test]
+    fn pick_free_skips_taken_ports() {
+        let taken: std::collections::HashSet<u16> = [40100, 40101].into_iter().collect();
+        let p = pick_free(40100, &taken).unwrap();
+        assert!(p >= 40102);
+        assert_eq!(
+            pick_free(40200, &Default::default()).map(|p| p >= 40200),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn apply_port_substitutes_and_exports() {
+        assert_eq!(apply_port("npm run dev", 3000, 3000), "npm run dev");
+        assert_eq!(
+            apply_port("npm run dev", 3000, 3002),
+            "PORT=3002 npm run dev"
+        );
+        assert_eq!(
+            apply_port("vite --port {port}", 3000, 3000),
+            "PORT=3000 vite --port 3000"
+        );
     }
 }

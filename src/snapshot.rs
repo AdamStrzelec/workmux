@@ -140,9 +140,27 @@ pub fn list(path: &Path) -> Result<Vec<Snapshot>> {
     Ok(snaps)
 }
 
+/// Branches whose pointer must not be moved back: `main`, `master`, the default branch.
+fn is_protected_branch(branch: &str) -> bool {
+    matches!(branch, "main" | "master")
+        || crate::git::get_default_branch().is_ok_and(|d| d == branch)
+}
+
 /// Restore the working tree to snapshot `id`. A `before-restore` snapshot is
-/// saved first, so the current state is never lost. Commits are not touched.
-pub fn restore(path: &Path, id: &str) -> Result<Snapshot> {
+/// saved first, so the current state is never lost. With `reset_branch` the
+/// branch also moves back to the commit it pointed at when the snapshot was
+/// taken (the snapshot's parent); commits made since stay reachable through
+/// the `before-restore` snapshot. Without it commits are not touched.
+pub fn restore(path: &Path, id: &str, reset_branch: bool) -> Result<Snapshot> {
+    if reset_branch {
+        let branch = git_ok(path, &["rev-parse", "--abbrev-ref", "HEAD"], &[])?;
+        if branch == "HEAD" {
+            bail!("HEAD is detached; check out a branch before resetting it");
+        }
+        if is_protected_branch(&branch) {
+            bail!("refusing to move protected branch '{branch}' back; use a feature branch");
+        }
+    }
     let snaps = list(path)?;
     let target = snaps.iter().find(|s| s.id == id).with_context(|| {
         format!("no snapshot '{id}' on this branch (see `workmux snapshot list`)")
@@ -151,8 +169,15 @@ pub fn restore(path: &Path, id: &str) -> Result<Snapshot> {
     let before = save(path, "before-restore")?;
     let refname = format!("{prefix}/{}", target.id);
     git_ok(path, &["read-tree", "--reset", "-u", &refname], &[])?;
-    // Unstage: keep the restored files in the working tree only.
-    git_ok(path, &["reset", "-q"], &[])?;
+    if reset_branch {
+        // Mixed reset: branch and index move to the snapshot's base commit,
+        // the restored files stay in the working tree as uncommitted changes.
+        let base = format!("{refname}^");
+        git_ok(path, &["reset", "-q", &base], &[])?;
+    } else {
+        // Unstage: keep the restored files in the working tree only.
+        git_ok(path, &["reset", "-q"], &[])?;
+    }
     Ok(before)
 }
 
@@ -221,5 +246,59 @@ mod tests {
         assert!(to_prune(&snaps, 3).is_empty());
         assert!(to_prune(&snaps, 10).is_empty());
         assert_eq!(to_prune(&snaps, 0).len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod git_tests {
+    use super::*;
+
+    fn g(p: &Path, a: &[&str]) -> String {
+        git_ok(
+            p,
+            a,
+            &[
+                ("GIT_AUTHOR_NAME", "t".into()),
+                ("GIT_AUTHOR_EMAIL", "t@t".into()),
+                ("GIT_COMMITTER_NAME", "t".into()),
+                ("GIT_COMMITTER_EMAIL", "t@t".into()),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn restore_with_reset_branch_moves_branch_and_keeps_old_commits() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path();
+        g(p, &["init", "-q", "-b", "feat"]);
+        std::fs::write(p.join("a"), "1").unwrap();
+        g(p, &["add", "a"]);
+        g(p, &["commit", "-q", "-m", "c1"]);
+        let c1 = g(p, &["rev-parse", "HEAD"]);
+        let snap = save(p, "base").unwrap();
+        std::fs::write(p.join("a"), "2").unwrap();
+        g(p, &["commit", "-qam", "c2"]);
+        let before = restore(p, &snap.id, true).unwrap();
+        assert_eq!(g(p, &["rev-parse", "HEAD"]), c1);
+        assert_eq!(std::fs::read_to_string(p.join("a")).unwrap(), "1");
+        // The undone commit is still reachable through before-restore.
+        let refname = format!("{REF_ROOT}/feat/{}", before.id);
+        assert_eq!(
+            g(p, &["log", "-1", "--format=%s", &format!("{refname}^")]),
+            "c2"
+        );
+    }
+
+    #[test]
+    fn reset_branch_refuses_main() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path();
+        g(p, &["init", "-q", "-b", "main"]);
+        std::fs::write(p.join("a"), "1").unwrap();
+        g(p, &["add", "a"]);
+        g(p, &["commit", "-q", "-m", "c1"]);
+        let snap = save(p, "x").unwrap();
+        assert!(restore(p, &snap.id, true).is_err());
     }
 }

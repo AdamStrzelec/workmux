@@ -27,11 +27,16 @@ pub fn list(json: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn restore(id: &str) -> Result<()> {
+pub fn restore(id: &str, reset_branch: bool) -> Result<()> {
     let cwd = std::env::current_dir()?;
-    let before = snapshot::restore(&cwd, id)?;
+    let before = snapshot::restore(&cwd, id, reset_branch)?;
     println!(
-        "Restored {id}. Previous state saved as {} (restore it to undo).",
+        "Restored {id}{}. Previous state saved as {} (restore it to undo).",
+        if reset_branch {
+            " (branch moved back)"
+        } else {
+            ""
+        },
         before.id
     );
     Ok(())

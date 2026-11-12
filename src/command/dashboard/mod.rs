@@ -314,6 +314,28 @@ fn handle_terminal_event(
         return;
     }
 
+    // Audit overlay: Enter/Esc/q/Space or a click closes it.
+    if app.audit_view.is_some() {
+        let dismiss = match &event {
+            Event::Key(key) => {
+                key.kind == KeyEventKind::Press
+                    && matches!(
+                        key.code,
+                        crossterm::event::KeyCode::Enter
+                            | crossterm::event::KeyCode::Esc
+                            | crossterm::event::KeyCode::Char('q')
+                            | crossterm::event::KeyCode::Char(' ')
+                    )
+            }
+            Event::Mouse(mouse) => matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)),
+            _ => false,
+        };
+        if dismiss {
+            app.audit_view = None;
+        }
+        return;
+    }
+
     // Error modal: Enter/Esc/o/Space or a click dismisses it; other input is ignored.
     if app.error_modal.is_some() {
         let dismiss = match &event {
