@@ -264,15 +264,6 @@ Ograniczenia: bez limitu czasu i bez limitu rozmiaru diffu (cały diff idzie na 
 
 Ograniczenia: tylko `send` do lokalnego agenta; zdalni agenci, `workmux run`, prompty wpisane ręcznie w tmux i akcje z dashboardu nie robią snapshotu. Brak czyszczenia starych snapshotów, więc przy częstym `send` refy się namnażają. Na dużym repo każdy `send` trwa dłużej (skan plików).
 
-### 3.22 Automatyczny snapshot przed `workmux run` (opis szczegółowy)
-
-1. Opcja `guard.snapshot_before_run: true` w globalnym configu (domyślnie wyłączona), obok `snapshot_before_send`.
-2. Gdy włączona, `workmux run <worktree> -- <komenda>` przed uruchomieniem komendy zapisuje snapshot worktree z etykietą `before-run` (patrz 3.15), wypisuje `snapshot saved: <id>` na stderr i stosuje `guard.snapshot_keep`.
-3. Błąd snapshotu tylko ostrzega (`warning: snapshot before run failed`), komenda i tak idzie.
-4. Odtwarzanie: `workmux snapshot list` i `restore <id>` w tym worktree.
-
-Ograniczenia: tylko `workmux run`; komendy wpisane ręcznie w tmux nie robią snapshotu. Na dużym repo każdy `run` trwa dłużej (skan plików). Snapshot nie cofa commitów ani brancha.
-
 ### 3.19 Wymuszenie poza workmux `workmux enforce` (opis szczegółowy)
 
 Cel: chronić branche także wtedy, gdy ktoś (albo agent z bypass permissions) użyje gołego `git`, z pominięciem workmux.
@@ -335,6 +326,15 @@ Ograniczenia:
 - Rozmowa może zawierać sekrety wklejone przez użytkownika. `history` drukuje je na terminal bez filtra, a `handoff --prompts` wkleja prompty do notatki, którą potem możesz komuś przekazać. Przejrzyj notatkę przed wysłaniem. `guard.protected_paths` tu nie działa.
 - Czyta pliki całego użytkownika systemowego; nie widzi rozmów innych użytkowników Linuxa (brak współdzielenia).
 - Odczyt całych plików przy każdym wyszukiwaniu: przy dużej historii `--all` może chwilę trwać.
+
+### 3.22 Automatyczny snapshot przed `workmux run` (opis szczegółowy)
+
+1. Opcja `guard.snapshot_before_run: true` w globalnym configu (domyślnie wyłączona), obok `snapshot_before_send`.
+2. Gdy włączona, `workmux run <worktree> -- <komenda>` przed uruchomieniem komendy zapisuje snapshot worktree z etykietą `before-run` (patrz 3.15), wypisuje `snapshot saved: <id>` na stderr i stosuje `guard.snapshot_keep`.
+3. Błąd snapshotu tylko ostrzega (`warning: snapshot before run failed`), komenda i tak idzie.
+4. Odtwarzanie: `workmux snapshot list` i `restore <id>` w tym worktree.
+
+Ograniczenia: tylko `workmux run`; komendy wpisane ręcznie w tmux nie robią snapshotu. Na dużym repo każdy `run` trwa dłużej (skan plików). Snapshot nie cofa commitów ani brancha.
 
 ## 4. Propozycje (moje), zaakceptowane
 
