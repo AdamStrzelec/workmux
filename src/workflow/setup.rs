@@ -38,7 +38,8 @@ pub fn provision_environment(
     let file_ops_source = options.config_root.as_deref().unwrap_or(project_root);
 
     if options.run_file_ops {
-        handle_file_operations(file_ops_source, effective_working_dir, &config.files)
+        let files = crate::symlinks::with_selected(&config.files, file_ops_source);
+        handle_file_operations(file_ops_source, effective_working_dir, &files)
             .context("Failed to perform file operations")?;
         symlink_claude_local_md(file_ops_source, effective_working_dir)
             .context("Failed to auto-symlink CLAUDE.local.md")?;

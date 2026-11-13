@@ -41,6 +41,7 @@ mod skills;
 mod snapshot;
 mod spinner;
 mod state;
+mod symlinks;
 mod team;
 mod template;
 #[cfg(test)]

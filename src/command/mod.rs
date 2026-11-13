@@ -13,6 +13,7 @@ pub mod docs;
 pub mod enforce;
 pub mod errors;
 pub mod exec;
+pub mod files;
 pub mod guard;
 pub mod handoff;
 pub mod history;
