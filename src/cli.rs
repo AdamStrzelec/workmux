@@ -259,6 +259,20 @@ impl From<CliMuxMode> for MuxMode {
 }
 
 #[derive(Subcommand)]
+pub enum FilesCommands {
+    /// Pick files interactively (default)
+    Select,
+    /// Show the current selection and the available files
+    List,
+    /// Add paths (relative to the repo root) to the selection
+    Add { paths: Vec<String> },
+    /// Remove paths from the selection
+    Remove { paths: Vec<String> },
+    /// Forget the whole selection for this repo
+    Clear,
+}
+
+#[derive(Subcommand)]
 enum Commands {
     #[command(name = "_remote-operation", hide = true)]
     RemoteOperation {
@@ -698,6 +712,12 @@ enum Commands {
         /// Bypass the cache and query the API now
         #[arg(long)]
         refresh: bool,
+    },
+
+    /// Choose untracked/ignored files to symlink into every new worktree
+    Files {
+        #[command(subcommand)]
+        command: Option<FilesCommands>,
     },
 
     /// Show the local journal of panics and failed commands
@@ -1487,6 +1507,7 @@ pub fn run() -> Result<()> {
             tmux,
             refresh,
         } => command::usage::run(json, tmux, refresh),
+        Commands::Files { command } => command::files::run(command),
         Commands::Errors { json, last } => command::errors::run(json, last),
         Commands::History { command } => match command {
             HistoryCommands::Search {

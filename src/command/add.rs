@@ -1381,10 +1381,12 @@ fn print_dry_run(
     if !options.run_file_ops {
         println!("  (disabled)");
     } else {
+        let files =
+            crate::symlinks::with_selected(&context.config.files, &context.config_source_dir);
         let operations = workflow::file_ops::resolve_file_operations(
             &context.config_source_dir,
             &worktree_path,
-            &context.config.files,
+            &files,
         )?;
         if operations.is_empty() {
             println!("  (none)");

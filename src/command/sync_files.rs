@@ -79,7 +79,8 @@ pub fn run(all: bool) -> Result<()> {
     };
 
     for target in &targets {
-        handle_file_operations(&file_ops_source, target, &config.files)
+        let files = crate::symlinks::with_selected(&config.files, &file_ops_source);
+        handle_file_operations(&file_ops_source, target, &files)
             .with_context(|| format!("Failed to sync files to {}", target.display()))?;
         symlink_claude_local_md(&repo_root, target)
             .with_context(|| format!("Failed to sync CLAUDE.local.md to {}", target.display()))?;

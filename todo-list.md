@@ -387,6 +387,20 @@ Plan:
 4. Prywatność: transkrypty mogą zawierać sekrety wklejone przez użytkownika; widok tylko lokalny, nic nie jest wysyłane ani publikowane do `team.dir` (jak 3.21).
 5. Ograniczenie: subagenci wewnątrz jednej sesji nie mają paneli tmux, więc "podgląd" to odtworzenie z transkryptu, nie żywy terminal.
 
+### 3.25 Wybór plików nieśledzonych do symlinkowania (`workmux files`) ✅
+
+Krok po kroku:
+1. `src/symlinks.rs`: zapis wyboru per użytkownik i per repo w `~/.config/workmux/symlinks.yaml` (poza repo, nie rusza `.workmux.yaml` ani `config.yaml`, nie jest współdzielony z partnerami).
+2. Lista kandydatów: `git ls-files --others` (nieśledzone) oraz z `--ignored` (np. `.env`, `node_modules`), katalogi zwinięte, `.git` pominięty.
+3. Przy każdym `workmux add` (oraz `sync-files` i podglądzie `--dry-run`) wybrane ścieżki są dokładane do `files.symlink`. Pomija je `-F`/`--no-file-ops`, jak resztę operacji na plikach.
+4. Komenda `workmux files`: `select` (domyślnie, numerowana lista: `1 3 5-7`, `all`, `none`, Enter zapisuje, `q` anuluje; działa przez SSH, bez nowej zależności), `list`, `add <ścieżki>`, `remove <ścieżki>`, `clear`.
+5. Ścieżki idą przez te same sprawdzenia co `files.symlink` (walidacja, że plik leży w repo). Znaki glob w nazwach są escapowane.
+
+Ograniczenia i ryzyka:
+- Symlink wskazuje na plik w głównym worktree: agent edytujący `.env` w worktree zmienia oryginał. Pliki z `guard.protected_paths` warto zostawić poza wyborem.
+- Nie symlinkuj `target/` (Cargo blokuje katalog, patrz docs/git-worktree-caveats).
+- Klucz repo to ścieżka głównego worktree; w monorepo z zagnieżdżonym configiem wybór może nie zadziałać (nieprzetestowane).
+
 ## 4. Propozycje (moje), zaakceptowane
 
 1. **Audit log / feed aktywności**: np. „Ania zmieniła .env, Marek zrobił merge do main”. Odpowiedź na problem nietechnicznych użytkowników.
@@ -467,6 +481,8 @@ Zasada: wszystko, co zostało dodane, ale nie przetestowane w prawdziwym środow
 | Alerty użycia | Komunikaty tmux przez prawdziwe SSH na innego hosta/usera | Brak drugiego hosta |
 | Alerty użycia | Etykieta powiadomień macOS („Terminal”) | Tylko opcjonalna poprawka |
 | `workmux usage` | Odczyt tokena na Linuksie (`~/.claude/.credentials.json`, `CLAUDE_CONFIG_DIR`) | Sprawdzone tylko na macOS (Keychain) |
+| `workmux files` | `select` w prawdziwym terminalu przez SSH, potem `workmux add` w `dev-forge`: czy symlinki powstają, czy `-F` je pomija | Testowane tylko skryptem (`add` + `sync-files`), bez tmux i bez interaktywnego pickera |
+| `workmux files` | Monorepo z zagnieżdżonym `.workmux.yaml` | Klucz repo = ścieżka źródła plików, nieprzetestowane |
 | Tryb bypass permissions | Wykrywanie i nadzór nad nietechnicznymi użytkownikami | Funkcja jeszcze nie zbudowana |
 | Dziennik błędów | Zapis przy prawdziwej panice (hook), rotacja przy >512 KB | Przetestowane tylko trim i serializacja oraz jeden błąd komendy; panika nie została wywołana end-to-end |
 | Wskaźnik błędów w dashboardzie | Wygląd `⚠ N` w nagłówku, zniknięcie po `workmux errors`, zachowanie na wąskim terminalu | Nie uruchamiałem dashboardu w tmux; brak testu jednostkowego (zależy od zmiennej środowiskowej) |
