@@ -11,6 +11,7 @@ pub enum Action {
     ShowHelp,
     ShowAuditLog,
     ShowSettings,
+    UpdateMain,
     ShowKeyMenu,
     Quit,
 
@@ -141,6 +142,10 @@ pub fn apply_action(app: &mut App, action: Action) -> bool {
                 lines.push("No audit events recorded.".into());
             }
             app.audit_view = Some(lines);
+            false
+        }
+        Action::UpdateMain => {
+            app.update_main_branch();
             false
         }
         Action::ShowSettings => {
@@ -557,6 +562,11 @@ fn palette_commands(ctx: Context, app: &App) -> Vec<PaletteCommand> {
                     action: Action::ShowAuditLog,
                 },
                 PaletteCommand {
+                    label: "Update main from origin",
+                    key_hint: "U",
+                    action: Action::UpdateMain,
+                },
+                PaletteCommand {
                     label: "Settings menu",
                     key_hint: "S",
                     action: Action::ShowSettings,
@@ -677,6 +687,11 @@ fn palette_commands(ctx: Context, app: &App) -> Vec<PaletteCommand> {
                 label: "Show help",
                 key_hint: "?",
                 action: Action::ShowHelp,
+            },
+            PaletteCommand {
+                label: "Update main from origin",
+                key_hint: "U",
+                action: Action::UpdateMain,
             },
             PaletteCommand {
                 label: "Settings menu",
