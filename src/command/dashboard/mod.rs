@@ -314,6 +314,41 @@ fn handle_terminal_event(
         return;
     }
 
+    // Settings menu overlay.
+    if let Some(menu) = app.pending_settings.as_mut() {
+        use crossterm::event::KeyCode;
+        let Event::Key(key) = &event else {
+            return;
+        };
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+        menu.reload();
+        if let Some(buffer) = menu.edit.as_mut() {
+            match key.code {
+                KeyCode::Enter => menu.commit_edit(),
+                KeyCode::Esc => menu.edit = None,
+                KeyCode::Backspace => {
+                    buffer.pop();
+                }
+                KeyCode::Char(c) => buffer.push(c),
+                _ => {}
+            }
+            return;
+        }
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => menu.move_cursor(true),
+            KeyCode::Char('k') | KeyCode::Up => menu.move_cursor(false),
+            KeyCode::Enter | KeyCode::Char(' ') => menu.activate(),
+            KeyCode::Char('r') => menu.reset(),
+            KeyCode::Tab | KeyCode::Char('g') | KeyCode::Char('p') => menu.toggle_scope(),
+            KeyCode::Char('e') => menu.open_in_editor(),
+            KeyCode::Esc | KeyCode::Char('q') => app.pending_settings = None,
+            _ => {}
+        }
+        return;
+    }
+
     // Audit overlay: Enter/Esc/q/Space or a click closes it.
     if app.audit_view.is_some() {
         let dismiss = match &event {

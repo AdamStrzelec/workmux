@@ -9,6 +9,7 @@ mod pr_actions;
 mod preview;
 mod run_tools;
 mod session_config;
+mod settings_overlay;
 mod types;
 mod worktrees;
 
@@ -16,6 +17,7 @@ pub use config_pages::*;
 pub use pr_actions::*;
 pub use run_tools::*;
 pub use session_config::*;
+pub use settings_overlay::*;
 pub use types::*;
 
 use anyhow::Result;
@@ -203,6 +205,8 @@ pub struct App {
     pub error_modal: Option<String>,
     /// Audit log lines (newest first) shown in a read-only overlay.
     pub audit_view: Option<Vec<String>>,
+    /// Settings menu overlay (`workmux` options of global/project config).
+    pub pending_settings: Option<SettingsOverlay>,
     /// Whether to show the "New: workmux sidebar" tip in the tab header
     pub show_sidebar_tip: bool,
     /// Whether the agents footer may show the remote servers tip; it is
@@ -363,6 +367,7 @@ impl App {
             status_message: None,
             error_modal: None,
             audit_view: None,
+            pending_settings: None,
             show_sidebar_tip,
             show_remote_tip,
             remote_tip_counted: false,
