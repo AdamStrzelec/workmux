@@ -103,6 +103,10 @@ impl App {
             AppEvent::AddWorktreeResult(result) => {
                 self.handle_add_worktree_result(result);
             }
+            AppEvent::MainUpdated(result) => {
+                let msg = result.unwrap_or_else(|e| format!("Update failed: {e}"));
+                self.status_message = Some((msg, std::time::Instant::now()));
+            }
             AppEvent::AddWorktreePrList(request_id, result) => {
                 if let Some(ref mut state) = self.pending_add_worktree
                     && request_id == state.pr_request_counter

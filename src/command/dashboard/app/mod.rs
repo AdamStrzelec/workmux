@@ -5,6 +5,7 @@ mod appearance;
 mod background;
 mod config_pages;
 mod events;
+mod main_update;
 mod pr_actions;
 mod preview;
 mod run_tools;

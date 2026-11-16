@@ -36,6 +36,8 @@ pub enum AppEvent {
     ),
     /// Result of a background add-worktree operation
     AddWorktreeResult(Result<String, String>),
+    /// Result of fast-forwarding the default branch from origin
+    MainUpdated(Result<String, String>),
     /// Result of fetching open PRs for the add-worktree modal
     AddWorktreePrList(u64, Result<Vec<PrListEntry>, String>),
     /// Progress update during background sweep (current, total, handle)
