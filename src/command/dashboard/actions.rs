@@ -679,6 +679,11 @@ fn palette_commands(ctx: Context, app: &App) -> Vec<PaletteCommand> {
                 action: Action::ShowHelp,
             },
             PaletteCommand {
+                label: "Settings menu",
+                key_hint: "S",
+                action: Action::ShowSettings,
+            },
+            PaletteCommand {
                 label: "Quit",
                 key_hint: "q",
                 action: Action::Quit,

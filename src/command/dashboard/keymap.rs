@@ -63,6 +63,7 @@ fn dashboard_normal_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('d') => Some(Action::LoadWipDiff),
         KeyCode::Char('c') => Some(Action::SendCommitDashboard),
         KeyCode::Char('m') => Some(Action::TriggerMergeDashboard),
+        KeyCode::Char('S') => Some(Action::ShowSettings),
         KeyCode::Char('T') => Some(Action::CycleColorScheme),
         KeyCode::Char('/') => Some(Action::EnterFilterMode),
         KeyCode::Char('o') => Some(Action::OpenPr),
