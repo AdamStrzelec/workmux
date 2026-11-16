@@ -256,6 +256,7 @@ fn has_modal(app: &App) -> bool {
         || app.pending_base_picker.is_some()
         || app.pending_project_picker.is_some()
         || app.pending_session_config.is_some()
+        || app.pending_settings.is_some()
         || app.pending_sweep.is_some()
         || app.pending_add_worktree.is_some()
         || app.pending_command_palette.is_some()

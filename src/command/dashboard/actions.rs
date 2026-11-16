@@ -10,6 +10,7 @@ pub enum Action {
     // Global actions
     ShowHelp,
     ShowAuditLog,
+    ShowSettings,
     ShowKeyMenu,
     Quit,
 
@@ -140,6 +141,10 @@ pub fn apply_action(app: &mut App, action: Action) -> bool {
                 lines.push("No audit events recorded.".into());
             }
             app.audit_view = Some(lines);
+            false
+        }
+        Action::ShowSettings => {
+            app.show_settings();
             false
         }
         Action::ShowKeyMenu => {
@@ -550,6 +555,11 @@ fn palette_commands(ctx: Context, app: &App) -> Vec<PaletteCommand> {
                     label: "Show audit log",
                     key_hint: "",
                     action: Action::ShowAuditLog,
+                },
+                PaletteCommand {
+                    label: "Settings menu",
+                    key_hint: "S",
+                    action: Action::ShowSettings,
                 },
                 PaletteCommand {
                     label: "Quit",

@@ -36,6 +36,7 @@ mod profile;
 mod prompt;
 mod remote;
 mod sandbox;
+mod settings_menu;
 mod shell;
 mod skills;
 mod snapshot;

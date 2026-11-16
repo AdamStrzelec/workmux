@@ -10,6 +10,7 @@ mod help;
 mod key_menu;
 mod popup;
 mod pr_menu;
+mod settings_view;
 pub mod theme;
 mod tool_menu;
 pub mod worktree;
@@ -71,6 +72,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         || app.pending_command_palette.is_some()
         || app.pending_row_context.is_some()
         || app.audit_view.is_some()
+        || app.pending_settings.is_some()
         || app.error_modal.is_some();
 
     if has_modal {
@@ -111,6 +113,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     if app.audit_view.is_some() {
         audit_view::render_audit_view(f, app);
+    }
+    if app.pending_settings.is_some() {
+        settings_view::render_settings_view(f, app);
     }
 
     // Errors stay on top of everything until dismissed.

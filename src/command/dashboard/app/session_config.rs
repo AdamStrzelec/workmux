@@ -234,7 +234,7 @@ pub struct WorktreeClaude {
 }
 
 /// Locate an existing project config, or the default path to create.
-fn config_path_for(repo_root: &Path) -> PathBuf {
+pub(super) fn config_path_for(repo_root: &Path) -> PathBuf {
     CONFIG_NAMES
         .iter()
         .map(|name| repo_root.join(name))
@@ -407,7 +407,7 @@ pub fn render_config_text(text: &str, tabs: &[SessionTab], focus: usize) -> Resu
 }
 
 /// Keep an untracked project config out of `git status` via `.git/info/exclude`.
-fn exclude_if_untracked(repo_root: &Path, config_path: &Path) -> Result<()> {
+pub(super) fn exclude_if_untracked(repo_root: &Path, config_path: &Path) -> Result<()> {
     let Some(file_name) = config_path.file_name().and_then(|n| n.to_str()) else {
         return Ok(());
     };
