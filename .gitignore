@@ -26,3 +26,6 @@ result
 result-*
 history
 .claude/temp
+
+# Local scratch (todo-list.md etc.), never committed
+/tmp/
