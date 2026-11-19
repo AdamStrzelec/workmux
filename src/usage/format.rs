@@ -45,6 +45,21 @@ pub fn until_reset(w: &Window, now: i64) -> Option<i64> {
     w.resets_at_unix.map(|t| t - now).filter(|d| *d > 0)
 }
 
+/// Share of the window already elapsed (0-100), from its length and reset time.
+pub fn elapsed_percent(w: &Window, now: i64) -> Option<u8> {
+    let total = i64::from(w.window_minutes?) * 60;
+    if total <= 0 {
+        return None;
+    }
+    let remaining = until_reset(w, now)?.min(total);
+    Some((((total - remaining) * 100 + total / 2) / total) as u8)
+}
+
+/// Bar cell index (0-based, clamped to `width - 1`) marking `percent` of time.
+pub fn marker_cell(percent: u8, width: usize) -> usize {
+    (usize::from(percent.min(100)) * width / 100).min(width.saturating_sub(1))
+}
+
 /// `28% (resets in 2h13m)` or `n/a`.
 pub fn describe(w: &Window, now: i64) -> String {
     let Some(p) = w.used_percent else {
@@ -99,6 +114,26 @@ mod tests {
         assert_eq!(bar(100, 4), "████");
         assert_eq!(bar(200, 4), "████");
         assert_eq!(bar(28, 10), "███░░░░░░░");
+    }
+
+    #[test]
+    fn elapsed() {
+        let mut w = win(10, Some(1000 + 3600));
+        w.window_minutes = Some(300);
+        assert_eq!(elapsed_percent(&w, 1000), Some(80));
+        w.resets_at_unix = Some(1000 + 300 * 60);
+        assert_eq!(elapsed_percent(&w, 1000), Some(0));
+        w.resets_at_unix = Some(500);
+        assert_eq!(elapsed_percent(&w, 1000), None);
+        w.window_minutes = None;
+        assert_eq!(elapsed_percent(&w, 0), None);
+    }
+
+    #[test]
+    fn marker_cells() {
+        assert_eq!(marker_cell(0, 10), 0);
+        assert_eq!(marker_cell(55, 10), 5);
+        assert_eq!(marker_cell(100, 10), 9);
     }
 
     #[test]

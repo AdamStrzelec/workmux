@@ -109,11 +109,15 @@ fn header_right_line(app: &App) -> Option<Line<'static>> {
     Some(Line::from(spans))
 }
 
-/// `5h 28% · 7d 63%`, coloured by utilization. None until a snapshot exists.
+/// `5h ██┃░ 28% 2h13m · 7d ███┃░ 63% 3d4h`, coloured by utilization. None until a snapshot exists.
 fn usage_header_line(app: &App) -> Option<Line<'static>> {
     use crate::usage::format::{Level, level};
 
     let snap = app.usage.as_ref()?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or_default();
     let mut spans: Vec<Span<'static>> = Vec::new();
     for (label, window) in [("5h", &snap.session), ("7d", &snap.weekly)] {
         let Some(p) = window.as_ref().and_then(|w| w.used_percent) else {
@@ -134,12 +138,57 @@ fn usage_header_line(app: &App) -> Option<Line<'static>> {
             format!("{label} "),
             Style::default().fg(app.palette.dimmed),
         ));
-        spans.push(Span::styled(
-            format!("{} {p}%", crate::usage::format::bar(p, 8)),
-            Style::default().fg(color),
-        ));
+        let w = window.as_ref().expect("checked above");
+        spans.extend(usage_bar_spans(p, w, now, color, &app.palette));
     }
     (!spans.is_empty()).then(|| Line::from(spans))
+}
+
+const USAGE_BAR_WIDTH: usize = 10;
+
+/// Usage bar with a time marker (`┃`) at the elapsed share of the window,
+/// then the percent used and the time left until reset.
+fn usage_bar_spans(
+    percent: u8,
+    window: &crate::usage::Window,
+    now: i64,
+    color: ratatui::style::Color,
+    palette: &ThemePalette,
+) -> Vec<Span<'static>> {
+    use crate::usage::format::{bar, elapsed_percent, format_duration, marker_cell, until_reset};
+
+    let cells: Vec<char> = bar(percent, USAGE_BAR_WIDTH).chars().collect();
+    let mut spans = Vec::new();
+    match elapsed_percent(window, now) {
+        Some(elapsed) => {
+            let at = marker_cell(elapsed, USAGE_BAR_WIDTH);
+            let before: String = cells[..at].iter().collect();
+            let after: String = cells[at + 1..].iter().collect();
+            spans.push(Span::styled(before, Style::default().fg(color)));
+            spans.push(Span::styled(
+                "\u{2503}",
+                Style::default()
+                    .fg(palette.text)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(after, Style::default().fg(color)));
+        }
+        None => spans.push(Span::styled(
+            cells.iter().collect::<String>(),
+            Style::default().fg(color),
+        )),
+    }
+    spans.push(Span::styled(
+        format!(" {percent}%"),
+        Style::default().fg(color),
+    ));
+    if let Some(left) = until_reset(window, now) {
+        spans.push(Span::styled(
+            format!(" {}", format_duration(left)),
+            Style::default().fg(palette.dimmed),
+        ));
+    }
+    spans
 }
 
 /// Render the dashboard view (table + preview + footer).
