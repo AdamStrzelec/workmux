@@ -23,6 +23,23 @@ use super::{Multiplexer, PaneHandshake, util};
 #[derive(Debug, Default)]
 pub struct TmuxBackend {
     socket_path: Option<String>,
+    /// Client that issued the action in progress.
+    ///
+    /// `switch-client` without `-c` picks the most recently active client at
+    /// the moment it runs. When an action takes a while (hooks, deferred
+    /// scripts) the user may have moved to another terminal window by then,
+    /// and that window's client would be switched instead.
+    pinned_client: std::sync::Mutex<Option<String>>,
+}
+
+/// Arguments for `switch-client`, aimed at `client` when one is pinned.
+fn switch_client_args<'a>(client: Option<&'a str>, rest: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec!["switch-client"];
+    if let Some(client) = client {
+        args.extend(["-c", client]);
+    }
+    args.extend(rest);
+    args
 }
 
 const LIVE_PANE_RECORD_SEPARATOR: char = '\x1e';
@@ -423,13 +440,54 @@ fn select_session_for_cwd(
 
 impl TmuxBackend {
     /// Create a new TmuxBackend instance.
+    ///
+    /// Inside tmux, the invoking client is pinned right away so a command that
+    /// outlives the keypress still switches the client the user acted in.
+    /// Long-running UIs must call `pin_client` again on every keypress.
     pub fn new() -> Self {
-        Self::default()
+        let backend = Self::default();
+        if std::env::var_os("TMUX").is_some() {
+            backend.pin_client();
+        }
+        backend
     }
 
     pub fn for_socket(socket_path: &str) -> Self {
         Self {
             socket_path: (socket_path != "default").then(|| socket_path.to_string()),
+            ..Self::default()
+        }
+    }
+
+    fn pinned_client(&self) -> Option<String> {
+        self.pinned_client.lock().ok()?.clone()
+    }
+
+    /// `switch-client` aimed at the pinned client, falling back to tmux's own
+    /// choice when that client is gone.
+    fn switch_client(&self, rest: &[&str]) -> Result<()> {
+        if let Some(client) = self.pinned_client()
+            && self
+                .tmux_cmd(&switch_client_args(Some(&client), rest))
+                .is_ok()
+        {
+            return Ok(());
+        }
+        self.tmux_cmd(&switch_client_args(None, rest))
+    }
+
+    /// Shell form of `switch_client` for deferred scripts. `rest` is already
+    /// shell-escaped.
+    fn shell_switch_client(&self, rest: &str) -> String {
+        let tmux = self.shell_tmux_command();
+        match self.pinned_client() {
+            Some(client) => {
+                let client = Self::shell_escape(&client);
+                format!(
+                    "{{ {tmux} switch-client -c {client} {rest} || {tmux} switch-client {rest}; }} >/dev/null 2>&1"
+                )
+            }
+            None => format!("{tmux} switch-client {rest} >/dev/null 2>&1"),
         }
     }
 
@@ -840,6 +898,17 @@ impl Multiplexer for TmuxBackend {
         self.tmux_command().arg("has-session").run_as_check()
     }
 
+    fn pin_client(&self) {
+        let client = self
+            .tmux_query(&["display-message", "-p", "#{client_name}"])
+            .ok()
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty());
+        if let Ok(mut pinned) = self.pinned_client.lock() {
+            *pinned = client;
+        }
+    }
+
     fn current_pane_id(&self) -> Option<String> {
         std::env::var("TMUX_PANE").ok()
     }
@@ -1058,7 +1127,7 @@ impl Multiplexer for TmuxBackend {
 
     fn switch_to_session(&self, prefix: &str, name: &str) -> Result<()> {
         let prefixed_name = util::prefixed(prefix, name);
-        self.tmux_cmd(&["switch-client", "-t", &prefixed_name])
+        self.switch_client(&["-t", &prefixed_name])
     }
 
     fn session_exists(&self, full_name: &str) -> Result<bool> {
@@ -1280,11 +1349,7 @@ impl Multiplexer for TmuxBackend {
 
     fn shell_switch_session_cmd(&self, full_name: &str) -> Result<String> {
         let escaped = Self::shell_escape(full_name);
-        Ok(format!(
-            "{} switch-client -t {} >/dev/null 2>&1",
-            self.shell_tmux_command(),
-            escaped
-        ))
+        Ok(self.shell_switch_client(&format!("-t {escaped}")))
     }
 
     fn shell_kill_session_cmd(&self, full_name: &str) -> Result<String> {
@@ -1292,10 +1357,7 @@ impl Multiplexer for TmuxBackend {
     }
 
     fn shell_switch_to_last_session_cmd(&self) -> Result<String> {
-        Ok(format!(
-            "{} switch-client -l >/dev/null 2>&1",
-            self.shell_tmux_command()
-        ))
+        Ok(self.shell_switch_client("-l"))
     }
 
     fn select_window(&self, prefix: &str, name: &str) -> Result<()> {
@@ -1306,7 +1368,7 @@ impl Multiplexer for TmuxBackend {
 
     fn select_window_target(&self, target: &WindowTarget) -> Result<()> {
         let target_arg = Self::window_target_arg(target);
-        self.tmux_cmd(&["switch-client", "-t", &target_arg])
+        self.switch_client(&["-t", &target_arg])
             .or_else(|_| self.tmux_cmd(&["select-window", "-t", &target_arg]))
     }
 
@@ -1428,7 +1490,7 @@ impl Multiplexer for TmuxBackend {
     }
 
     fn switch_to_pane(&self, pane_id: &str, _window_hint: Option<&str>) -> Result<()> {
-        self.tmux_cmd(&["switch-client", "-t", pane_id])
+        self.switch_client(&["-t", pane_id])
     }
 
     fn kill_pane(&self, pane_id: &str) -> Result<()> {
@@ -1709,6 +1771,54 @@ mod tests {
     use super::*;
 
     const LIVE_PANE_LINE: &str = "%7\t12345\tnode\t/repo\tWorking\tmain\twork\t$1\t@2\t4";
+
+    #[test]
+    fn switch_client_args_without_pin_leave_client_to_tmux() {
+        assert_eq!(
+            switch_client_args(None, &["-t", "%3"]),
+            ["switch-client", "-t", "%3"]
+        );
+    }
+
+    #[test]
+    fn switch_client_args_with_pin_target_that_client() {
+        assert_eq!(
+            switch_client_args(Some("/dev/ttys051"), &["-t", "%3"]),
+            ["switch-client", "-c", "/dev/ttys051", "-t", "%3"]
+        );
+    }
+
+    #[test]
+    fn shell_switch_client_without_pin_is_plain() {
+        let backend = TmuxBackend::default();
+        assert_eq!(
+            backend.shell_switch_client("-t 'work'"),
+            "tmux switch-client -t 'work' >/dev/null 2>&1"
+        );
+    }
+
+    #[test]
+    fn shell_switch_client_with_pin_targets_client_and_falls_back() {
+        let backend = TmuxBackend::default();
+        *backend.pinned_client.lock().unwrap() = Some("/dev/ttys051".to_string());
+        assert_eq!(
+            backend.shell_switch_client("-t 'work'"),
+            "{ tmux switch-client -c '/dev/ttys051' -t 'work' || tmux switch-client -t 'work'; } >/dev/null 2>&1"
+        );
+    }
+
+    #[test]
+    fn pin_client_forgets_the_client_when_tmux_cannot_name_one() {
+        // Nothing listens on this socket, so no client can be named. A stale
+        // pin would aim later switches at a client the user left.
+        let temp = tempfile::tempdir().unwrap();
+        let backend = TmuxBackend::for_socket(&temp.path().join("no-server").to_string_lossy());
+        *backend.pinned_client.lock().unwrap() = Some("/dev/ttys051".to_string());
+
+        backend.pin_client();
+
+        assert_eq!(backend.pinned_client(), None);
+    }
 
     #[test]
     fn run_shell_preserves_literal_tmux_formats() {

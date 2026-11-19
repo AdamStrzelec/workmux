@@ -136,6 +136,14 @@ pub trait Multiplexer: Send + Sync {
     /// Check if the multiplexer server is running
     fn is_running(&self) -> Result<bool>;
 
+    /// Remember which client the user is acting in right now.
+    ///
+    /// Later client switches target it instead of whichever client is most
+    /// recently active when they run, which may be another terminal window.
+    /// Long-lived UIs call this on every keypress. No-op for backends whose
+    /// switches already act on the invoking terminal.
+    fn pin_client(&self) {}
+
     fn current_window_id(&self) -> Result<Option<String>> {
         Ok(None)
     }

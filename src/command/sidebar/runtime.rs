@@ -361,6 +361,8 @@ fn process_event(
             }
         }
         AppEvent::Input(Event::Key(key)) if key.kind == KeyEventKind::Press => {
+            // Aim client switches at the terminal this keypress came from.
+            app.mux.pin_client();
             handle_key_press(app, key.code, key.modifiers);
             *needs_render = true;
         }
