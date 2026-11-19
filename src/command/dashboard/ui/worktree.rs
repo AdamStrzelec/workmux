@@ -27,7 +27,8 @@ pub fn render_worktree_table(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let show_check_counts = app.config.dashboard.show_check_counts();
+    // The worktree table always shows passed/total for failing or running CI.
+    let show_check_counts = true;
 
     let worktree_max_width = worktree_width_budget(area.width);
 
@@ -808,6 +809,51 @@ fn render_info_panel(
             let mut line_spans = vec![Span::styled("        ", label_style)];
             line_spans.extend(detail_spans);
             lines.push(Line::from(line_spans));
+        }
+
+        // Every failing and running check by name
+        if let Some(meta) = meta {
+            let name_max = (area.width.saturating_sub(2) as usize).saturating_sub(10);
+            let frames = crate::ui::pr_status::SPINNER_FRAMES;
+            let spinner = frames[app.spinner_frame as usize % frames.len()].to_string();
+            let failure_icon = crate::nerdfont::check_icons().failure.to_string();
+            let named = meta
+                .failing_names
+                .iter()
+                .map(|n| (n, &failure_icon, app.palette.danger))
+                .chain(
+                    meta.pending_names
+                        .iter()
+                        .map(|n| (n, &spinner, app.palette.accent)),
+                )
+                // Skip the first failure: the detail line above already names it
+                .filter(|(n, _, _)| {
+                    !matches!(state, crate::github::CheckState::Failure { .. })
+                        || Some(n.as_str()) != meta.failing_name.as_deref()
+                });
+            const MAX_CHECKS: usize = 6;
+            let mut shown = 0;
+            let mut hidden = 0;
+            for (name, icon, color) in named {
+                if shown == MAX_CHECKS {
+                    hidden += 1;
+                    continue;
+                }
+                shown += 1;
+                lines.push(Line::from(vec![
+                    Span::styled("        ", label_style),
+                    Span::styled(
+                        format!("{icon} {}", truncate(name, name_max)),
+                        Style::default().fg(color),
+                    ),
+                ]));
+            }
+            if hidden > 0 {
+                lines.push(Line::from(vec![
+                    Span::styled("        ", label_style),
+                    Span::styled(format!("\u{2026} {hidden} more"), label_style),
+                ]));
+            }
         }
     }
 

@@ -110,6 +110,12 @@ pub struct CheckMeta {
     /// Name of the first failing check, if any
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failing_name: Option<String>,
+    /// Names of every failing check.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub failing_names: Vec<String>,
+    /// Names of every check still running or queued.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_names: Vec<String>,
 }
 
 /// Aggregated checks for a GitHub commit.
@@ -122,7 +128,7 @@ pub struct CheckSummary {
 
 impl CheckSummary {
     pub fn should_display_for_branch(&self, branch: &str) -> bool {
-        !matches!(branch, "main" | "master") || matches!(self.state, CheckState::Failure { .. })
+        !matches!(branch, "main" | "master") || !matches!(self.state, CheckState::Success)
     }
 }
 
@@ -216,6 +222,8 @@ fn aggregate_checks(checks: &[CheckRollupItem]) -> (Option<CheckState>, Option<C
     let mut earliest_any_start: Option<u64> = None;
     let mut latest_any_start: Option<u64> = None;
     let mut failing_name: Option<String> = None;
+    let mut failing_names: Vec<String> = Vec::new();
+    let mut pending_names: Vec<String> = Vec::new();
 
     for check in checks {
         let status = check.status.as_deref().unwrap_or("");
@@ -238,12 +246,14 @@ fn aggregate_checks(checks: &[CheckRollupItem]) -> (Option<CheckState>, Option<C
                 if failing_name.is_none() {
                     failing_name = check.name.clone();
                 }
+                failing_names.extend(check.name.clone());
             }
             // Neutral/skipped - track but don't count toward active total
             (_, "NEUTRAL" | "SKIPPED") => skipped += 1,
             // Pending states (expanded)
             ("IN_PROGRESS" | "QUEUED" | "PENDING" | "REQUESTED" | "WAITING", _) => {
                 pending += 1;
+                pending_names.extend(check.name.clone());
                 if let Some(t) = ts {
                     earliest_pending_start =
                         Some(earliest_pending_start.map_or(t, |prev: u64| prev.min(t)));
@@ -276,11 +286,13 @@ fn aggregate_checks(checks: &[CheckRollupItem]) -> (Option<CheckState>, Option<C
     let meta = if pending > 0 {
         // Use earliest pending start, fall back to earliest any start
         let started = earliest_pending_start.or(earliest_any_start);
-        if started.is_some() || failing_name.is_some() {
+        if started.is_some() || failing_name.is_some() || !pending_names.is_empty() {
             Some(CheckMeta {
                 started_at: started,
                 duration_secs: None,
                 failing_name,
+                failing_names,
+                pending_names,
             })
         } else {
             None
@@ -296,6 +308,8 @@ fn aggregate_checks(checks: &[CheckRollupItem]) -> (Option<CheckState>, Option<C
                 started_at: earliest_any_start,
                 duration_secs,
                 failing_name,
+                failing_names,
+                pending_names,
             })
         } else {
             None
@@ -1785,7 +1799,7 @@ mod tests {
         };
 
         assert!(!success.should_display_for_branch("main"));
-        assert!(!pending.should_display_for_branch("main"));
+        assert!(pending.should_display_for_branch("main"));
         assert!(failure.should_display_for_branch("main"));
         assert!(!success.should_display_for_branch("master"));
         assert!(success.should_display_for_branch("feature"));
@@ -2095,6 +2109,26 @@ mod tests {
             meta.as_ref().and_then(|m| m.failing_name.as_deref()),
             Some("lint-check")
         );
+    }
+
+    #[test]
+    fn aggregate_checks_lists_failing_and_pending_names() {
+        let item = |status: &str, conclusion: Option<&str>, name: &str| CheckRollupItem {
+            status: Some(status.into()),
+            conclusion: conclusion.map(Into::into),
+            name: Some(name.into()),
+            started_at: None,
+        };
+        let checks = vec![
+            item("COMPLETED", Some("FAILURE"), "lint"),
+            item("COMPLETED", Some("TIMED_OUT"), "e2e"),
+            item("IN_PROGRESS", None, "build"),
+            item("COMPLETED", Some("SUCCESS"), "fmt"),
+        ];
+        let (_, meta) = aggregate_checks(&checks);
+        let meta = meta.expect("meta");
+        assert_eq!(meta.failing_names, ["lint", "e2e"]);
+        assert_eq!(meta.pending_names, ["build"]);
     }
 
     fn remote_query(name: &str, branches: Vec<String>) -> RemoteQuery {
