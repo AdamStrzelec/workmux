@@ -394,6 +394,30 @@ fn truncate_start(path: &str, max: usize) -> String {
     format!("\u{2026}{tail}")
 }
 
+/// Display a path with the home directory replaced by `~`.
+fn tilde_path(path: &std::path::Path) -> String {
+    if let Some(home) = home::home_dir()
+        && let Ok(rest) = path.strip_prefix(&home)
+    {
+        return if rest.as_os_str().is_empty() {
+            "~".to_string()
+        } else {
+            format!("~/{}", rest.display())
+        };
+    }
+    path.display().to_string()
+}
+
+/// Age and author of the newest commit in a `%h\t%ar\t%an\t%s` log.
+fn last_commit(log: &str) -> Option<(&str, &str)> {
+    let mut parts = log.lines().next()?.splitn(4, '\t');
+    let _hash = parts.next()?;
+    let age = parts.next()?;
+    let author = parts.next()?;
+    parts.next()?;
+    Some((age, author))
+}
+
 /// Info panel takes ~45% of the preview, between 40 and 90 columns.
 fn info_panel_width(total: u16) -> u16 {
     (u32::from(total) * 45 / 100)
@@ -497,6 +521,13 @@ fn render_info_panel(
     lines.push(Line::from(vec![
         Span::styled("Branch  ", label_style),
         Span::styled(&wt.branch, text_style),
+    ]));
+
+    // Worktree path, home shortened to ~ and trimmed from the start
+    let path_max = (area.width.saturating_sub(2) as usize).saturating_sub(8);
+    lines.push(Line::from(vec![
+        Span::styled("Path    ", label_style),
+        Span::styled(truncate_start(&tilde_path(&wt.path), path_max), label_style),
     ]));
 
     // Git status details (base branch, ahead/behind, diff stats)
@@ -688,11 +719,15 @@ fn render_info_panel(
     }
 
     // CI: prefer the live branch check summary, fall back to the PR's checks
-    let ci_state = app
+    let ci = app
         .get_checks_for_worktree(wt)
-        .map(|s| &s.state)
-        .or_else(|| wt.pr_info.as_ref().and_then(|pr| pr.checks.as_ref()));
-    if let Some(state) = ci_state {
+        .map(|s| (&s.state, s.meta.as_ref()))
+        .or_else(|| {
+            wt.pr_info
+                .as_ref()
+                .and_then(|pr| pr.checks.as_ref().map(|c| (c, pr.check_meta.as_ref())))
+        });
+    if let Some((state, meta)) = ci {
         let (text, color) = ci_label(state, &app.palette);
         let icon = match state {
             crate::github::CheckState::Success => {
@@ -710,11 +745,14 @@ fn render_info_panel(
             Span::styled("CI      ", label_style),
             Span::styled(format!("{icon} {text}"), Style::default().fg(color)),
         ]));
-    }
 
-    if let Some(ref pr) = wt.pr_info {
-        // Check detail: failing check name or pending elapsed time
-        let detail_spans = super::format::format_pr_details(pr, app.spinner_frame, &app.palette);
+        // Check detail: failing check name or running time
+        let detail_spans = crate::ui::pr_status::format_check_details(
+            state,
+            meta,
+            app.spinner_frame,
+            &app.palette,
+        );
         if !detail_spans.is_empty() {
             let mut line_spans = vec![Span::styled("        ", label_style)];
             line_spans.extend(detail_spans);
@@ -722,7 +760,17 @@ fn render_info_panel(
         }
     }
 
+    // Last commit: author and age
+    if let Some((age, author)) = app.worktree_preview.as_deref().and_then(last_commit) {
+        lines.push(Line::from(vec![
+            Span::styled("Commit  ", label_style),
+            Span::styled(author.to_string(), text_style),
+            Span::styled(format!(" \u{b7} {age}"), label_style),
+        ]));
+    }
+
     // Agent status
+
     if wt.agent_status.is_some() {
         let mut agent_spans = vec![Span::styled("Agent   ", label_style)];
         for (text, style) in format_agent_status_summary(
@@ -840,14 +888,14 @@ fn render_git_log(
             let lines: Vec<Line> = log
                 .lines()
                 .map(|line| {
-                    let parts: Vec<&str> = line.splitn(3, '\t').collect();
-                    if parts.len() == 3 {
+                    let parts: Vec<&str> = line.splitn(4, '\t').collect();
+                    if parts.len() == 4 {
                         Line::from(vec![
                             Span::styled(parts[0], hash_style),
                             Span::styled("  ", date_style),
                             Span::styled(parts[1], date_style),
                             Span::styled("  ", msg_style),
-                            Span::styled(parts[2], msg_style),
+                            Span::styled(parts[3], msg_style),
                         ])
                     } else {
                         // Fallback for lines that don't match format
@@ -1024,6 +1072,14 @@ mod tests {
         assert_eq!(info_panel_width(150), 67);
         assert_eq!(info_panel_width(300), 90);
         assert_eq!(info_panel_width(30), 30);
+    }
+
+    #[test]
+    fn last_commit_reads_age_and_author() {
+        let log = "abc123\t2 hours ago\tAdam\tfix: thing\ndef456\t1 day ago\tBob\tinit";
+        assert_eq!(last_commit(log), Some(("2 hours ago", "Adam")));
+        assert_eq!(last_commit(""), None);
+        assert_eq!(last_commit("abc\tnow\tmsg"), None);
     }
 
     #[test]

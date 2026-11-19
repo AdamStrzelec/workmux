@@ -1510,7 +1510,7 @@ impl App {
                 std::thread::spawn(move || {
                     let output = crate::git::unattended_git(Some(&path)).and_then(|mut command| {
                         command
-                            .args(["log", "--format=%h\t%ar\t%s", "-n", "20"])
+                            .args(["log", "--format=%h\t%ar\t%an\t%s", "-n", "20"])
                             .output()
                             .map_err(anyhow::Error::from)
                     });
