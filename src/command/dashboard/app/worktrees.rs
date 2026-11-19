@@ -1503,6 +1503,7 @@ impl App {
         if current_path != self.worktree_preview_path {
             self.worktree_preview_path = current_path.clone();
             self.worktree_preview = None;
+            self.worktree_files = None;
 
             if let Some(path) = current_path {
                 let tx = self.event_tx.clone();
@@ -1515,7 +1516,20 @@ impl App {
                     });
                     if let Ok(out) = output {
                         let log = String::from_utf8_lossy(&out.stdout).to_string();
-                        let _ = tx.send(AppEvent::WorktreeLog(path, log));
+                        let _ = tx.send(AppEvent::WorktreeLog(path.clone(), log));
+                    }
+                    let status = crate::git::unattended_git(Some(&path)).and_then(|mut command| {
+                        command
+                            .args(["status", "--porcelain=v1", "--untracked-files=all"])
+                            .output()
+                            .map_err(anyhow::Error::from)
+                    });
+                    if let Ok(out) = status
+                        && out.status.success()
+                    {
+                        let files =
+                            super::types::parse_porcelain(&String::from_utf8_lossy(&out.stdout));
+                        let _ = tx.send(AppEvent::WorktreeFiles(path, files));
                     }
                 });
             }

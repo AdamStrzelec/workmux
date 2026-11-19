@@ -200,6 +200,8 @@ pub struct App {
     pub worktree_preview: Option<String>,
     /// Path of the worktree whose preview is cached
     worktree_preview_path: Option<PathBuf>,
+    /// Changed files (`git status`) of the selected worktree
+    pub worktree_files: Option<Vec<FileChange>>,
     /// Temporary status message shown in the footer (auto-clears after timeout)
     pub status_message: Option<(String, std::time::Instant)>,
     /// Error shown in a modal until dismissed (promoted from status_message).
@@ -365,6 +367,7 @@ impl App {
             last_worktree_fetch: std::time::Instant::now() - Duration::from_secs(60),
             worktree_preview: None,
             worktree_preview_path: None,
+            worktree_files: None,
             status_message: None,
             error_modal: None,
             audit_view: None,

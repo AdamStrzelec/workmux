@@ -29,6 +29,8 @@ pub enum AppEvent {
     WorktreeList(Vec<WorktreeInfo>),
     /// Git log preview for a worktree path
     WorktreeLog(PathBuf, String),
+    /// `git status --porcelain` entries for the selected worktree.
+    WorktreeFiles(PathBuf, Vec<FileChange>),
     /// Result of a confirmed background removal.
     RemoveWorktreeResult(
         PathBuf,
@@ -774,5 +776,62 @@ mod base_picker_tests {
         s.base_filter = "origin/release".to_string();
         assert!(s.base_filtered().is_empty());
         assert_eq!(s.base_selection().as_deref(), Some("origin/release"));
+    }
+}
+
+/// One changed file in a worktree, from `git status --porcelain=v1`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileChange {
+    /// Two-letter porcelain code, e.g. ` M`, `A `, `??`, `UU`.
+    pub code: String,
+    pub path: String,
+}
+
+impl FileChange {
+    /// Unmerged entry (merge, rebase or cherry-pick conflict).
+    pub fn is_conflict(&self) -> bool {
+        matches!(
+            self.code.as_str(),
+            "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD"
+        )
+    }
+
+    pub fn is_untracked(&self) -> bool {
+        self.code == "??"
+    }
+}
+
+/// Parse `git status --porcelain=v1` output; conflicts are sorted first.
+pub fn parse_porcelain(output: &str) -> Vec<FileChange> {
+    let mut files: Vec<FileChange> = output
+        .lines()
+        .filter(|line| line.len() > 3)
+        .map(|line| FileChange {
+            code: line[..2].to_string(),
+            path: line[3..].to_string(),
+        })
+        .collect();
+    files.sort_by_key(|f| (!f.is_conflict(), f.is_untracked()));
+    files
+}
+
+#[cfg(test)]
+mod file_change_tests {
+    use super::*;
+
+    #[test]
+    fn parses_and_orders_conflicts_first() {
+        let files = parse_porcelain("?? new.txt\n M src/a.rs\nUU src/b.rs\nR  old -> new\n");
+        let codes: Vec<&str> = files.iter().map(|f| f.code.as_str()).collect();
+        assert_eq!(codes, ["UU", " M", "R ", "??"]);
+        assert_eq!(files[0].path, "src/b.rs");
+        assert!(files[0].is_conflict());
+        assert!(files[3].is_untracked());
+        assert_eq!(files[2].path, "old -> new");
+    }
+
+    #[test]
+    fn empty_output_is_clean() {
+        assert!(parse_porcelain("").is_empty());
     }
 }

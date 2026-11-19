@@ -375,13 +375,63 @@ pub fn render_worktree_preview(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Split preview area into info panel (left) and git log (right)
     let chunks = Layout::horizontal([
-        Constraint::Length(40), // Info panel: fixed width
-        Constraint::Fill(1),    // Git log: remaining space
+        Constraint::Length(info_panel_width(area.width)),
+        Constraint::Fill(1), // Git log: remaining space
     ])
     .split(area);
 
     render_info_panel(f, app, chunks[0], selected_worktree);
     render_git_log(f, app, chunks[1], selected_worktree);
+}
+
+/// Keep the end of `path` (the file name), prefixing `…` when cut.
+fn truncate_start(path: &str, max: usize) -> String {
+    let count = path.chars().count();
+    if count <= max || max < 2 {
+        return path.to_string();
+    }
+    let tail: String = path.chars().skip(count - (max - 1)).collect();
+    format!("\u{2026}{tail}")
+}
+
+/// Info panel takes ~45% of the preview, between 40 and 90 columns.
+fn info_panel_width(total: u16) -> u16 {
+    (u32::from(total) * 45 / 100)
+        .clamp(40, 90)
+        .min(u32::from(total)) as u16
+}
+
+/// Human label and colour for a PR's lifecycle state.
+fn pr_state_label(
+    pr: &crate::github::PrSummary,
+    palette: &ThemePalette,
+) -> (&'static str, ratatui::style::Color) {
+    if pr.is_draft {
+        return ("draft", palette.dimmed);
+    }
+    match pr.state.as_str() {
+        "OPEN" => ("open", palette.success),
+        "MERGED" => ("merged", palette.accent),
+        "CLOSED" => ("closed", palette.danger),
+        _ => ("unknown", palette.dimmed),
+    }
+}
+
+/// Human label and colour for aggregated CI state, with pass counts.
+fn ci_label(
+    state: &crate::github::CheckState,
+    palette: &ThemePalette,
+) -> (String, ratatui::style::Color) {
+    use crate::github::CheckState;
+    match state {
+        CheckState::Success => ("passing".to_string(), palette.success),
+        CheckState::Failure { passed, total } => {
+            (format!("failing ({passed}/{total} passed)"), palette.danger)
+        }
+        CheckState::Pending { passed, total } => {
+            (format!("running ({passed}/{total} passed)"), palette.accent)
+        }
+    }
 }
 
 /// Render the info panel showing worktree metadata.
@@ -534,17 +584,20 @@ fn render_info_panel(
             Span::styled(format!("#{} ", pr.number), Style::default().fg(color)),
             Span::styled(icon, Style::default().fg(color)),
         ];
-        // Check status
-        if let Some(ref checks) = pr.checks {
-            use crate::github::CheckState;
-            let check_icons = crate::nerdfont::check_icons();
-            let (check_icon, check_color) = match checks {
-                CheckState::Success => (check_icons.success.to_string(), app.palette.success),
-                CheckState::Failure { .. } => (check_icons.failure.to_string(), app.palette.danger),
-                CheckState::Pending { .. } => (check_icons.pending.to_string(), app.palette.accent),
-            };
-            pr_spans.push(Span::styled(" ", text_style));
-            pr_spans.push(Span::styled(check_icon, Style::default().fg(check_color)));
+        let (state_label, state_color) = pr_state_label(pr, &app.palette);
+        pr_spans.push(Span::styled(
+            format!(" {state_label}"),
+            Style::default().fg(state_color),
+        ));
+        match pr.mergeable.as_deref() {
+            Some("CONFLICTING") => pr_spans.push(Span::styled(
+                " \u{b7} merge conflicts",
+                Style::default().fg(app.palette.danger),
+            )),
+            Some("MERGEABLE") if pr.state == "OPEN" => {
+                pr_spans.push(Span::styled(" \u{b7} mergeable", label_style))
+            }
+            _ => {}
         }
         lines.push(Line::from(pr_spans));
 
@@ -567,6 +620,46 @@ fn render_info_panel(
             Span::styled(truncated_title, Style::default().fg(color)),
         ]));
 
+        if !pr.closing_issues.is_empty() {
+            let issues = pr
+                .closing_issues
+                .iter()
+                .map(|i| format!("#{}", i.number))
+                .collect::<Vec<_>>()
+                .join(" ");
+            lines.push(Line::from(vec![
+                Span::styled("        closes ", label_style),
+                Span::styled(issues, Style::default().fg(app.palette.info)),
+            ]));
+        }
+    }
+
+    // CI: prefer the live branch check summary, fall back to the PR's checks
+    let ci_state = app
+        .get_checks_for_worktree(wt)
+        .map(|s| &s.state)
+        .or_else(|| wt.pr_info.as_ref().and_then(|pr| pr.checks.as_ref()));
+    if let Some(state) = ci_state {
+        let (text, color) = ci_label(state, &app.palette);
+        let icon = match state {
+            crate::github::CheckState::Success => {
+                crate::nerdfont::check_icons().success.to_string()
+            }
+            crate::github::CheckState::Failure { .. } => {
+                crate::nerdfont::check_icons().failure.to_string()
+            }
+            crate::github::CheckState::Pending { .. } => {
+                let frames = crate::ui::pr_status::SPINNER_FRAMES;
+                frames[app.spinner_frame as usize % frames.len()].to_string()
+            }
+        };
+        lines.push(Line::from(vec![
+            Span::styled("CI      ", label_style),
+            Span::styled(format!("{icon} {text}"), Style::default().fg(color)),
+        ]));
+    }
+
+    if let Some(ref pr) = wt.pr_info {
         // Check detail: failing check name or pending elapsed time
         let detail_spans = super::format::format_pr_details(pr, app.spinner_frame, &app.palette);
         if !detail_spans.is_empty() {
@@ -616,6 +709,60 @@ fn render_info_panel(
                 Style::default().fg(app.palette.dimmed),
             ),
         ]));
+    }
+
+    // Uncommitted / conflicted files, as many as fit
+    if let Some(files) = &app.worktree_files {
+        let inner_width = area.width.saturating_sub(2) as usize;
+        let inner_height = area.height.saturating_sub(2) as usize;
+        let conflicts = files.iter().filter(|f| f.is_conflict()).count();
+        let mut header = vec![Span::styled("Files   ", label_style)];
+        if files.is_empty() {
+            header.push(Span::styled(
+                "clean",
+                Style::default().fg(app.palette.success),
+            ));
+        } else {
+            header.push(Span::styled(format!("{} changed", files.len()), text_style));
+            if conflicts > 0 {
+                header.push(Span::styled(
+                    format!(" \u{b7} {conflicts} conflicted"),
+                    Style::default().fg(app.palette.danger),
+                ));
+            }
+        }
+        lines.push(Line::from(header));
+
+        let room = inner_height.saturating_sub(lines.len());
+        let shown = if files.len() > room {
+            room.saturating_sub(1)
+        } else {
+            files.len()
+        };
+        for file in files.iter().take(shown) {
+            let color = if file.is_conflict() {
+                app.palette.danger
+            } else if file.is_untracked() {
+                app.palette.dimmed
+            } else {
+                app.palette.warning
+            };
+            let path_max = inner_width.saturating_sub(11);
+            lines.push(Line::from(vec![
+                Span::styled("        ", label_style),
+                Span::styled(
+                    format!("{} ", file.code.replace(' ', "\u{b7}")),
+                    Style::default().fg(color),
+                ),
+                Span::styled(truncate_start(&file.path, path_max), text_style),
+            ]));
+        }
+        if shown < files.len() && room > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("        \u{2026} {} more", files.len() - shown),
+                label_style,
+            )));
+        }
     }
 
     let paragraph = Paragraph::new(Text::from(lines)).block(block);
@@ -816,6 +963,23 @@ mod tests {
         let buffer = render(&visible_columns(&[Pr], false), vec![data], 20, None);
         assert_eq!(line(&buffer, 0), "PR");
         assert_eq!(line(&buffer, 1), "-");
+    }
+
+    #[test]
+    fn info_panel_width_scales_and_clamps() {
+        assert_eq!(info_panel_width(60), 40);
+        assert_eq!(info_panel_width(150), 67);
+        assert_eq!(info_panel_width(300), 90);
+        assert_eq!(info_panel_width(30), 30);
+    }
+
+    #[test]
+    fn truncate_start_keeps_file_name() {
+        assert_eq!(truncate_start("src/a.rs", 20), "src/a.rs");
+        assert_eq!(
+            truncate_start("src/deep/path/file.rs", 8),
+            "\u{2026}file.rs"
+        );
     }
 
     #[test]
