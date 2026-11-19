@@ -417,9 +417,9 @@ fn handle_key_press(
     }
 
     match (code, modifiers) {
-        (KeyCode::Char('q'), _)
-        | (KeyCode::Esc, _)
-        | (KeyCode::Char('c'), crossterm::event::KeyModifiers::CONTROL) => {
+        // Esc is deliberately not an exit key: it is pressed too often by
+        // accident and exiting tears the sidebar down in every window.
+        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), crossterm::event::KeyModifiers::CONTROL) => {
             app.pending_exit = true;
         }
         (KeyCode::Char('j'), _) | (KeyCode::Down, _) => app.next(),

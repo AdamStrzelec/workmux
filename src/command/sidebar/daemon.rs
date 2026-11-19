@@ -2316,6 +2316,26 @@ impl Scheduler {
 }
 
 /// Run the sidebar daemon (headless, no TUI).
+/// Periodically restore sidebars missing from in-scope windows.
+fn spawn_sidebar_healer(term: Arc<AtomicBool>) {
+    thread::spawn(move || {
+        let interval = Duration::from_secs(5);
+        let step = Duration::from_millis(250);
+        let mut waited = Duration::ZERO;
+        while !term.load(Ordering::Relaxed) {
+            thread::sleep(step);
+            waited += step;
+            if waited < interval {
+                continue;
+            }
+            waited = Duration::ZERO;
+            if let Err(error) = super::heal_missing_sidebars() {
+                tracing::debug!(%error, "sidebar heal failed");
+            }
+        }
+    });
+}
+
 pub fn run() -> Result<()> {
     let mux = create_backend(detect_backend());
     let instance_id = mux.instance_id();
@@ -2364,6 +2384,10 @@ pub fn run() -> Result<()> {
         super::session_state::update(&instance_id, |state| {
             state.daemon_pid = Some(std::process::id());
         })?;
+    }
+
+    if tmux.is_some() {
+        spawn_sidebar_healer(term.clone());
     }
 
     let mut scheduler = Scheduler::new(Instant::now());
