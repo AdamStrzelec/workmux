@@ -31,7 +31,12 @@ struct TerminalGuard;
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
+        let _ = execute!(
+            io::stdout(),
+            event::DisableFocusChange,
+            DisableMouseCapture,
+            LeaveAlternateScreen
+        );
     }
 }
 
@@ -81,7 +86,12 @@ pub fn run_sidebar() -> Result<()> {
     // Setup terminal (raw mode required before spawning input thread)
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        event::EnableFocusChange
+    )?;
     let _guard = TerminalGuard;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
@@ -385,6 +395,14 @@ fn process_event(
                 }
                 _ => {}
             }
+            *needs_render = true;
+        }
+        AppEvent::Input(Event::FocusGained) => {
+            app.set_focused(true);
+            *needs_render = true;
+        }
+        AppEvent::Input(Event::FocusLost) => {
+            app.set_focused(false);
             *needs_render = true;
         }
         AppEvent::Input(Event::Resize(cols, rows)) => {
