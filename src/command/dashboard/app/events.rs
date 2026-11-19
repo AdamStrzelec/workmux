@@ -91,6 +91,16 @@ impl App {
                     self.worktree_preview = Some(log);
                 }
             }
+            AppEvent::WorktreeFiles(path, files) => {
+                if self.worktree_preview_path.as_ref() == Some(&path) {
+                    self.worktree_files = Some(files);
+                }
+            }
+            AppEvent::WorktreeStashes(path, count) => {
+                if self.worktree_preview_path.as_ref() == Some(&path) {
+                    self.worktree_stashes = Some(count);
+                }
+            }
             AppEvent::RemoveWorktreeResult(path, result) => {
                 self.handle_remove_worktree_result(path, result);
             }

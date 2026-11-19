@@ -645,6 +645,10 @@ mod tests {
             state: "OPEN".to_string(),
             is_draft: false,
             mergeable: None,
+            review_decision: None,
+            reviewers: Vec::new(),
+            labels: Vec::new(),
+            assignees: Vec::new(),
             checks: Some(CheckState::Failure {
                 passed: 2,
                 total: 3,

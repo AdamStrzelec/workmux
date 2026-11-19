@@ -123,16 +123,24 @@ pub fn format_pr_details(
     spinner_frame: u8,
     palette: &ThemePalette,
 ) -> Vec<Span<'static>> {
-    let Some(checks) = &pr.checks else {
-        return vec![];
-    };
+    match &pr.checks {
+        Some(checks) => {
+            format_check_details(checks, pr.check_meta.as_ref(), spinner_frame, palette)
+        }
+        None => vec![],
+    }
+}
 
+/// Detail for a check state: failing check name, or elapsed time while running.
+pub fn format_check_details(
+    checks: &CheckState,
+    meta: Option<&CheckMeta>,
+    spinner_frame: u8,
+    palette: &ThemePalette,
+) -> Vec<Span<'static>> {
     match checks {
         CheckState::Failure { .. } => {
-            let Some(meta) = &pr.check_meta else {
-                return vec![];
-            };
-            let Some(name) = &meta.failing_name else {
+            let Some(name) = meta.and_then(|m| m.failing_name.as_ref()) else {
                 return vec![];
             };
             let icon = nerdfont::check_icons().failure;
@@ -141,7 +149,7 @@ pub fn format_pr_details(
                 Style::default().fg(palette.danger),
             )]
         }
-        CheckState::Pending { .. } => match format_check_elapsed(checks, pr.check_meta.as_ref()) {
+        CheckState::Pending { .. } => match format_check_elapsed(checks, meta) {
             Some(time_str) => {
                 let frame = SPINNER_FRAMES[spinner_frame as usize % SPINNER_FRAMES.len()];
                 vec![Span::styled(

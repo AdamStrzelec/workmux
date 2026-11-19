@@ -27,7 +27,8 @@ pub fn render_worktree_table(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let show_check_counts = app.config.dashboard.show_check_counts();
+    // The worktree table always shows passed/total for failing or running CI.
+    let show_check_counts = true;
 
     let worktree_max_width = worktree_width_budget(area.width);
 
@@ -375,13 +376,141 @@ pub fn render_worktree_preview(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Split preview area into info panel (left) and git log (right)
     let chunks = Layout::horizontal([
-        Constraint::Length(40), // Info panel: fixed width
-        Constraint::Fill(1),    // Git log: remaining space
+        Constraint::Length(info_panel_width(area.width)),
+        Constraint::Fill(1), // Git log: remaining space
     ])
     .split(area);
 
     render_info_panel(f, app, chunks[0], selected_worktree);
     render_git_log(f, app, chunks[1], selected_worktree);
+}
+
+/// Keep the end of `path` (the file name), prefixing `…` when cut.
+fn truncate_start(path: &str, max: usize) -> String {
+    let count = path.chars().count();
+    if count <= max || max < 2 {
+        return path.to_string();
+    }
+    let tail: String = path.chars().skip(count - (max - 1)).collect();
+    format!("\u{2026}{tail}")
+}
+
+/// Display a path with the home directory replaced by `~`.
+fn tilde_path(path: &std::path::Path) -> String {
+    if let Some(home) = home::home_dir()
+        && let Ok(rest) = path.strip_prefix(&home)
+    {
+        return if rest.as_os_str().is_empty() {
+            "~".to_string()
+        } else {
+            format!("~/{}", rest.display())
+        };
+    }
+    path.display().to_string()
+}
+
+/// Age and author of the newest commit in a `%h\t%ar\t%an\t%s` log.
+fn last_commit(log: &str) -> Option<(&str, &str)> {
+    let mut parts = log.lines().next()?.splitn(4, '\t');
+    let _hash = parts.next()?;
+    let age = parts.next()?;
+    let author = parts.next()?;
+    parts.next()?;
+    Some((age, author))
+}
+
+/// Info panel takes ~45% of the preview, between 40 and 90 columns.
+/// Most recent activity timestamp among agents running inside `worktree`.
+/// An agent belongs to the worktree whose path is the longest prefix of its
+/// cwd, so agents in nested worktrees are not counted for the parent.
+fn last_agent_activity(
+    agents: &[crate::multiplexer::AgentPane],
+    worktree: &std::path::Path,
+    all_worktrees: &[&std::path::Path],
+) -> Option<u64> {
+    agents
+        .iter()
+        .filter(|a| {
+            all_worktrees
+                .iter()
+                .filter(|w| a.path.starts_with(w))
+                .max_by_key(|w| w.as_os_str().len())
+                .is_some_and(|owner| *owner == worktree)
+        })
+        .filter_map(|a| a.activity_ts())
+        .max()
+}
+
+fn info_panel_width(total: u16) -> u16 {
+    (u32::from(total) * 45 / 100)
+        .clamp(40, 90)
+        .min(u32::from(total)) as u16
+}
+
+/// Human label and colour for a PR's lifecycle state.
+fn pr_state_label(
+    pr: &crate::github::PrSummary,
+    palette: &ThemePalette,
+) -> (&'static str, ratatui::style::Color) {
+    if pr.is_draft {
+        return ("draft", palette.dimmed);
+    }
+    match pr.state.as_str() {
+        "OPEN" => ("open", palette.success),
+        "MERGED" => ("merged", palette.accent),
+        "CLOSED" => ("closed", palette.danger),
+        _ => ("unknown", palette.dimmed),
+    }
+}
+
+/// Review decision plus requested reviewers, e.g. `changes requested · waiting on alice, @core`.
+fn review_spans(
+    pr: &crate::github::PrSummary,
+    palette: &ThemePalette,
+) -> Option<Vec<Span<'static>>> {
+    let decision = match pr.review_decision.as_deref() {
+        Some("APPROVED") => Some(("approved", palette.success)),
+        Some("CHANGES_REQUESTED") => Some(("changes requested", palette.danger)),
+        Some("REVIEW_REQUIRED") => Some(("review required", palette.warning)),
+        _ => None,
+    };
+    if decision.is_none() && pr.reviewers.is_empty() {
+        return None;
+    }
+    let mut spans = Vec::new();
+    if let Some((text, color)) = decision {
+        spans.push(Span::styled(text, Style::default().fg(color)));
+    }
+    if !pr.reviewers.is_empty() {
+        if !spans.is_empty() {
+            spans.push(Span::styled(
+                " \u{b7} ",
+                Style::default().fg(palette.dimmed),
+            ));
+        }
+        spans.push(Span::styled(
+            format!("waiting on {}", pr.reviewers.join(", ")),
+            Style::default().fg(palette.dimmed),
+        ));
+    }
+    Some(spans)
+}
+
+/// Human label and colour for aggregated CI state, with pass counts.
+fn ci_label(
+    state: &crate::github::CheckState,
+    palette: &ThemePalette,
+) -> (String, ratatui::style::Color) {
+    use crate::github::CheckState;
+    match state {
+        CheckState::Success => ("passing".to_string(), palette.success),
+        CheckState::Failure { passed, total } => {
+            (format!("failing ({passed}/{total} passed)"), palette.danger)
+        }
+        CheckState::Pending { passed, total } => {
+            (format!("running ({passed}/{total} passed)"), palette.accent)
+        }
+    }
 }
 
 /// Render the info panel showing worktree metadata.
@@ -416,6 +545,29 @@ fn render_info_panel(
         Span::styled(&wt.branch, text_style),
     ]));
 
+    // Worktree path, home shortened to ~ and trimmed from the start
+    let path_max = (area.width.saturating_sub(2) as usize).saturating_sub(8);
+    lines.push(Line::from(vec![
+        Span::styled("Path    ", label_style),
+        Span::styled(truncate_start(&tilde_path(&wt.path), path_max), label_style),
+    ]));
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    // Worktree age
+    if let Some(created) = wt.created_at {
+        lines.push(Line::from(vec![
+            Span::styled("Age     ", label_style),
+            Span::styled(
+                format!("{} old", agent::format_age(now.saturating_sub(created))),
+                text_style,
+            ),
+        ]));
+    }
+
     // Git status details (base branch, ahead/behind, diff stats)
     let git_status = app.git_statuses.get(&wt.path);
     if let Some(status) = git_status {
@@ -426,26 +578,38 @@ fn render_info_panel(
         } else {
             base_spans.push(Span::styled("main", text_style));
         }
-        if status.ahead > 0 || status.behind > 0 {
-            base_spans.push(Span::styled(" (", label_style));
+        lines.push(Line::from(base_spans));
+
+        // Remote tracking: ahead/behind are relative to the upstream branch
+        let mut remote_spans = vec![Span::styled("Remote  ", label_style)];
+        if !status.has_upstream {
+            remote_spans.push(Span::styled(
+                "not pushed (no upstream)",
+                Style::default().fg(app.palette.warning),
+            ));
+        } else if status.ahead == 0 && status.behind == 0 {
+            remote_spans.push(Span::styled(
+                "in sync",
+                Style::default().fg(app.palette.success),
+            ));
+        } else {
             if status.ahead > 0 {
-                base_spans.push(Span::styled(
-                    format!("\u{2191}{}", status.ahead),
+                remote_spans.push(Span::styled(
+                    format!("\u{2191}{} unpushed", status.ahead),
                     Style::default().fg(app.palette.info),
                 ));
             }
             if status.ahead > 0 && status.behind > 0 {
-                base_spans.push(Span::styled(" ", label_style));
+                remote_spans.push(Span::styled(" \u{b7} ", label_style));
             }
             if status.behind > 0 {
-                base_spans.push(Span::styled(
-                    format!("\u{2193}{}", status.behind),
+                remote_spans.push(Span::styled(
+                    format!("\u{2193}{} to pull", status.behind),
                     Style::default().fg(app.palette.accent),
                 ));
             }
-            base_spans.push(Span::styled(")", label_style));
         }
-        lines.push(Line::from(base_spans));
+        lines.push(Line::from(remote_spans));
 
         // Committed diff stats
         if status.lines_added > 0 || status.lines_removed > 0 {
@@ -534,17 +698,20 @@ fn render_info_panel(
             Span::styled(format!("#{} ", pr.number), Style::default().fg(color)),
             Span::styled(icon, Style::default().fg(color)),
         ];
-        // Check status
-        if let Some(ref checks) = pr.checks {
-            use crate::github::CheckState;
-            let check_icons = crate::nerdfont::check_icons();
-            let (check_icon, check_color) = match checks {
-                CheckState::Success => (check_icons.success.to_string(), app.palette.success),
-                CheckState::Failure { .. } => (check_icons.failure.to_string(), app.palette.danger),
-                CheckState::Pending { .. } => (check_icons.pending.to_string(), app.palette.accent),
-            };
-            pr_spans.push(Span::styled(" ", text_style));
-            pr_spans.push(Span::styled(check_icon, Style::default().fg(check_color)));
+        let (state_label, state_color) = pr_state_label(pr, &app.palette);
+        pr_spans.push(Span::styled(
+            format!(" {state_label}"),
+            Style::default().fg(state_color),
+        ));
+        match pr.mergeable.as_deref() {
+            Some("CONFLICTING") => pr_spans.push(Span::styled(
+                " \u{b7} merge conflicts",
+                Style::default().fg(app.palette.danger),
+            )),
+            Some("MERGEABLE") if pr.state == "OPEN" => {
+                pr_spans.push(Span::styled(" \u{b7} mergeable", label_style))
+            }
+            _ => {}
         }
         lines.push(Line::from(pr_spans));
 
@@ -567,16 +734,152 @@ fn render_info_panel(
             Span::styled(truncated_title, Style::default().fg(color)),
         ]));
 
-        // Check detail: failing check name or pending elapsed time
-        let detail_spans = super::format::format_pr_details(pr, app.spinner_frame, &app.palette);
+        if pr.state == "OPEN"
+            && let Some(review) = review_spans(pr, &app.palette)
+        {
+            let mut spans = vec![Span::styled("Review  ", label_style)];
+            spans.extend(review);
+            lines.push(Line::from(spans));
+        }
+
+        if !pr.labels.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("Labels  ", label_style),
+                Span::styled(pr.labels.join(", "), Style::default().fg(app.palette.info)),
+            ]));
+        }
+
+        if !pr.assignees.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("Assign  ", label_style),
+                Span::styled(pr.assignees.join(", "), text_style),
+            ]));
+        }
+
+        if !pr.closing_issues.is_empty() {
+            let issues = pr
+                .closing_issues
+                .iter()
+                .map(|i| format!("#{}", i.number))
+                .collect::<Vec<_>>()
+                .join(" ");
+            lines.push(Line::from(vec![
+                Span::styled("        closes ", label_style),
+                Span::styled(issues, Style::default().fg(app.palette.info)),
+            ]));
+        }
+    }
+
+    // CI: prefer the live branch check summary, fall back to the PR's checks
+    let ci = app
+        .get_checks_for_worktree(wt)
+        .map(|s| (&s.state, s.meta.as_ref()))
+        .or_else(|| {
+            wt.pr_info
+                .as_ref()
+                .and_then(|pr| pr.checks.as_ref().map(|c| (c, pr.check_meta.as_ref())))
+        });
+    if let Some((state, meta)) = ci {
+        let (text, color) = ci_label(state, &app.palette);
+        let icon = match state {
+            crate::github::CheckState::Success => {
+                crate::nerdfont::check_icons().success.to_string()
+            }
+            crate::github::CheckState::Failure { .. } => {
+                crate::nerdfont::check_icons().failure.to_string()
+            }
+            crate::github::CheckState::Pending { .. } => {
+                let frames = crate::ui::pr_status::SPINNER_FRAMES;
+                frames[app.spinner_frame as usize % frames.len()].to_string()
+            }
+        };
+        lines.push(Line::from(vec![
+            Span::styled("CI      ", label_style),
+            Span::styled(format!("{icon} {text}"), Style::default().fg(color)),
+        ]));
+
+        // Check detail: failing check name or running time
+        let detail_spans = crate::ui::pr_status::format_check_details(
+            state,
+            meta,
+            app.spinner_frame,
+            &app.palette,
+        );
         if !detail_spans.is_empty() {
             let mut line_spans = vec![Span::styled("        ", label_style)];
             line_spans.extend(detail_spans);
             lines.push(Line::from(line_spans));
         }
+
+        // Every failing and running check by name
+        if let Some(meta) = meta {
+            let name_max = (area.width.saturating_sub(2) as usize).saturating_sub(10);
+            let frames = crate::ui::pr_status::SPINNER_FRAMES;
+            let spinner = frames[app.spinner_frame as usize % frames.len()].to_string();
+            let failure_icon = crate::nerdfont::check_icons().failure.to_string();
+            let named = meta
+                .failing_names
+                .iter()
+                .map(|n| (n, &failure_icon, app.palette.danger))
+                .chain(
+                    meta.pending_names
+                        .iter()
+                        .map(|n| (n, &spinner, app.palette.accent)),
+                )
+                // Skip the first failure: the detail line above already names it
+                .filter(|(n, _, _)| {
+                    !matches!(state, crate::github::CheckState::Failure { .. })
+                        || Some(n.as_str()) != meta.failing_name.as_deref()
+                });
+            const MAX_CHECKS: usize = 6;
+            let mut shown = 0;
+            let mut hidden = 0;
+            for (name, icon, color) in named {
+                if shown == MAX_CHECKS {
+                    hidden += 1;
+                    continue;
+                }
+                shown += 1;
+                lines.push(Line::from(vec![
+                    Span::styled("        ", label_style),
+                    Span::styled(
+                        format!("{icon} {}", truncate(name, name_max)),
+                        Style::default().fg(color),
+                    ),
+                ]));
+            }
+            if hidden > 0 {
+                lines.push(Line::from(vec![
+                    Span::styled("        ", label_style),
+                    Span::styled(format!("\u{2026} {hidden} more"), label_style),
+                ]));
+            }
+        }
+    }
+
+    // Last commit: author and age
+    if let Some((age, author)) = app.worktree_preview.as_deref().and_then(last_commit) {
+        lines.push(Line::from(vec![
+            Span::styled("Commit  ", label_style),
+            Span::styled(author.to_string(), text_style),
+            Span::styled(format!(" \u{b7} {age}"), label_style),
+        ]));
+    }
+
+    // Stash entries made on this branch
+    if let Some(count) = app.worktree_stashes.filter(|c| *c > 0) {
+        let noun = if count == 1 { "entry" } else { "entries" };
+        lines.push(Line::from(vec![
+            Span::styled("Stash   ", label_style),
+            Span::styled(
+                format!("{count} {noun}"),
+                Style::default().fg(app.palette.warning),
+            ),
+        ]));
     }
 
     // Agent status
+
     if wt.agent_status.is_some() {
         let mut agent_spans = vec![Span::styled("Agent   ", label_style)];
         for (text, style) in format_agent_status_summary(
@@ -587,6 +890,17 @@ fn render_info_panel(
             AgentStatusFormat::DetailLine,
         ) {
             agent_spans.push(Span::styled(text, style));
+        }
+        let worktree_paths: Vec<&std::path::Path> =
+            app.worktrees.iter().map(|w| w.path.as_path()).collect();
+        if let Some(ts) = last_agent_activity(&app.agents, &wt.path, &worktree_paths) {
+            agent_spans.push(Span::styled(
+                format!(
+                    " \u{b7} active {} ago",
+                    agent::format_age(now.saturating_sub(ts))
+                ),
+                label_style,
+            ));
         }
         lines.push(Line::from(agent_spans));
     }
@@ -618,6 +932,60 @@ fn render_info_panel(
         ]));
     }
 
+    // Uncommitted / conflicted files, as many as fit
+    if let Some(files) = &app.worktree_files {
+        let inner_width = area.width.saturating_sub(2) as usize;
+        let inner_height = area.height.saturating_sub(2) as usize;
+        let conflicts = files.iter().filter(|f| f.is_conflict()).count();
+        let mut header = vec![Span::styled("Files   ", label_style)];
+        if files.is_empty() {
+            header.push(Span::styled(
+                "clean",
+                Style::default().fg(app.palette.success),
+            ));
+        } else {
+            header.push(Span::styled(format!("{} changed", files.len()), text_style));
+            if conflicts > 0 {
+                header.push(Span::styled(
+                    format!(" \u{b7} {conflicts} conflicted"),
+                    Style::default().fg(app.palette.danger),
+                ));
+            }
+        }
+        lines.push(Line::from(header));
+
+        let room = inner_height.saturating_sub(lines.len());
+        let shown = if files.len() > room {
+            room.saturating_sub(1)
+        } else {
+            files.len()
+        };
+        for file in files.iter().take(shown) {
+            let color = if file.is_conflict() {
+                app.palette.danger
+            } else if file.is_untracked() {
+                app.palette.dimmed
+            } else {
+                app.palette.warning
+            };
+            let path_max = inner_width.saturating_sub(11);
+            lines.push(Line::from(vec![
+                Span::styled("        ", label_style),
+                Span::styled(
+                    format!("{} ", file.code.replace(' ', "\u{b7}")),
+                    Style::default().fg(color),
+                ),
+                Span::styled(truncate_start(&file.path, path_max), text_style),
+            ]));
+        }
+        if shown < files.len() && room > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("        \u{2026} {} more", files.len() - shown),
+                label_style,
+            )));
+        }
+    }
+
     let paragraph = Paragraph::new(Text::from(lines)).block(block);
     f.render_widget(paragraph, area);
 }
@@ -640,14 +1008,14 @@ fn render_git_log(
             let lines: Vec<Line> = log
                 .lines()
                 .map(|line| {
-                    let parts: Vec<&str> = line.splitn(3, '\t').collect();
-                    if parts.len() == 3 {
+                    let parts: Vec<&str> = line.splitn(4, '\t').collect();
+                    if parts.len() == 4 {
                         Line::from(vec![
                             Span::styled(parts[0], hash_style),
                             Span::styled("  ", date_style),
                             Span::styled(parts[1], date_style),
                             Span::styled("  ", msg_style),
-                            Span::styled(parts[2], msg_style),
+                            Span::styled(parts[3], msg_style),
                         ])
                     } else {
                         // Fallback for lines that don't match format
@@ -816,6 +1184,63 @@ mod tests {
         let buffer = render(&visible_columns(&[Pr], false), vec![data], 20, None);
         assert_eq!(line(&buffer, 0), "PR");
         assert_eq!(line(&buffer, 1), "-");
+    }
+
+    #[test]
+    fn info_panel_width_scales_and_clamps() {
+        assert_eq!(info_panel_width(60), 40);
+        assert_eq!(info_panel_width(150), 67);
+        assert_eq!(info_panel_width(300), 90);
+        assert_eq!(info_panel_width(30), 30);
+    }
+
+    #[test]
+    fn last_agent_activity_skips_agents_of_nested_worktrees() {
+        use std::path::{Path, PathBuf};
+        let agent = |path: &str, ts: u64| crate::multiplexer::AgentPane {
+            session: String::new(),
+            window_name: String::new(),
+            pane_id: String::new(),
+            window_id: String::new(),
+            window_index: None,
+            path: PathBuf::from(path),
+            pane_title: None,
+            status: None,
+            status_ts: Some(ts),
+            activity_ts: Some(ts),
+            updated_ts: None,
+            window_cmd: None,
+            agent_command: None,
+            agent_kind: None,
+            prompt: None,
+            remote: None,
+        };
+        let agents = [
+            agent("/repo/src", 100),
+            agent("/repo/.worktrees/feat", 300),
+            agent("/other", 500),
+        ];
+        let all = [Path::new("/repo"), Path::new("/repo/.worktrees/feat")];
+        assert_eq!(last_agent_activity(&agents, all[0], &all), Some(100));
+        assert_eq!(last_agent_activity(&agents, all[1], &all), Some(300));
+        assert_eq!(last_agent_activity(&agents, Path::new("/none"), &all), None);
+    }
+
+    #[test]
+    fn last_commit_reads_age_and_author() {
+        let log = "abc123\t2 hours ago\tAdam\tfix: thing\ndef456\t1 day ago\tBob\tinit";
+        assert_eq!(last_commit(log), Some(("2 hours ago", "Adam")));
+        assert_eq!(last_commit(""), None);
+        assert_eq!(last_commit("abc\tnow\tmsg"), None);
+    }
+
+    #[test]
+    fn truncate_start_keeps_file_name() {
+        assert_eq!(truncate_start("src/a.rs", 20), "src/a.rs");
+        assert_eq!(
+            truncate_start("src/deep/path/file.rs", 8),
+            "\u{2026}file.rs"
+        );
     }
 
     #[test]
