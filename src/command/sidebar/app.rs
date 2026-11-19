@@ -830,7 +830,11 @@ impl SidebarApp {
     /// active row stands out while navigating.
     fn apply_focus_highlight(&mut self) {
         self.palette.highlight_row_bg = if self.focused {
-            focused_highlight(self.base_highlight_row_bg, self.palette.accent)
+            focused_highlight(
+                self.base_highlight_row_bg,
+                self.palette.accent,
+                self.palette.text,
+            )
         } else {
             self.base_highlight_row_bg
         };
@@ -3512,29 +3516,77 @@ mod filter_tests {
 }
 
 /// Blend the selection background toward the accent color.
+///
+/// Uses the strongest blend (up to 40%) that keeps the row text at a
+/// WCAG contrast of at least 4.5:1, so focus is visible without washing out
+/// the selected item's text.
 pub(super) fn focused_highlight(
     base: ratatui::style::Color,
     accent: ratatui::style::Color,
+    text: ratatui::style::Color,
 ) -> ratatui::style::Color {
     use ratatui::style::Color;
-    match (base, accent) {
-        (Color::Rgb(br, bg, bb), Color::Rgb(ar, ag, ab)) => {
-            let mix = |b: u8, a: u8| (b as f32 + (a as f32 - b as f32) * 0.45).round() as u8;
-            Color::Rgb(mix(br, ar), mix(bg, ag), mix(bb, ab))
+    let (Color::Rgb(br, bg, bb), Color::Rgb(ar, ag, ab)) = (base, accent) else {
+        return base;
+    };
+    let mix = |t: f32| {
+        let m = |b: u8, a: u8| (b as f32 + (a as f32 - b as f32) * t).round() as u8;
+        Color::Rgb(m(br, ar), m(bg, ag), m(bb, ab))
+    };
+    let Color::Rgb(..) = text else {
+        return mix(0.25);
+    };
+    let mut t = 0.40;
+    while t > 0.0 {
+        let candidate = mix(t);
+        if contrast_ratio(candidate, text) >= 4.5 {
+            return candidate;
         }
-        _ => accent,
+        t -= 0.05;
     }
+    base
+}
+
+fn relative_luminance(color: ratatui::style::Color) -> f32 {
+    let ratatui::style::Color::Rgb(r, g, b) = color else {
+        return 0.0;
+    };
+    let channel = |c: u8| {
+        let c = c as f32 / 255.0;
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+fn contrast_ratio(a: ratatui::style::Color, b: ratatui::style::Color) -> f32 {
+    let (la, lb) = (relative_luminance(a), relative_luminance(b));
+    let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
 }
 
 #[cfg(test)]
 mod focus_highlight_tests {
-    use super::focused_highlight;
+    use super::{contrast_ratio, focused_highlight};
     use ratatui::style::Color;
 
     #[test]
-    fn focused_highlight_moves_toward_accent() {
-        let got = focused_highlight(Color::Rgb(40, 48, 62), Color::Rgb(203, 166, 247));
-        assert_eq!(got, Color::Rgb(113, 101, 145));
-        assert_eq!(focused_highlight(Color::Reset, Color::Blue), Color::Blue);
+    fn focused_highlight_is_stronger_but_keeps_text_readable() {
+        let base = Color::Rgb(42, 37, 58);
+        let text = Color::Rgb(230, 224, 245);
+        let got = focused_highlight(base, Color::Rgb(255, 140, 200), text);
+        assert_ne!(got, base);
+        assert!(contrast_ratio(got, text) >= 4.5);
+    }
+
+    #[test]
+    fn non_rgb_base_is_left_alone() {
+        assert_eq!(
+            focused_highlight(Color::Reset, Color::Blue, Color::White),
+            Color::Reset
+        );
     }
 }
