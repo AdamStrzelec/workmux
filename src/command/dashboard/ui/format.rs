@@ -509,6 +509,8 @@ mod tests {
             state: "OPEN".into(),
             is_draft: false,
             mergeable: None,
+            review_decision: None,
+            reviewers: Vec::new(),
             checks: None,
             check_meta: None,
             url: Some("https://github.com/raine/workmux/pull/42".into()),

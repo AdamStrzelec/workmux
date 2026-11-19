@@ -417,6 +417,39 @@ fn pr_state_label(
     }
 }
 
+/// Review decision plus requested reviewers, e.g. `changes requested · waiting on alice, @core`.
+fn review_spans(
+    pr: &crate::github::PrSummary,
+    palette: &ThemePalette,
+) -> Option<Vec<Span<'static>>> {
+    let decision = match pr.review_decision.as_deref() {
+        Some("APPROVED") => Some(("approved", palette.success)),
+        Some("CHANGES_REQUESTED") => Some(("changes requested", palette.danger)),
+        Some("REVIEW_REQUIRED") => Some(("review required", palette.warning)),
+        _ => None,
+    };
+    if decision.is_none() && pr.reviewers.is_empty() {
+        return None;
+    }
+    let mut spans = Vec::new();
+    if let Some((text, color)) = decision {
+        spans.push(Span::styled(text, Style::default().fg(color)));
+    }
+    if !pr.reviewers.is_empty() {
+        if !spans.is_empty() {
+            spans.push(Span::styled(
+                " \u{b7} ",
+                Style::default().fg(palette.dimmed),
+            ));
+        }
+        spans.push(Span::styled(
+            format!("waiting on {}", pr.reviewers.join(", ")),
+            Style::default().fg(palette.dimmed),
+        ));
+    }
+    Some(spans)
+}
+
 /// Human label and colour for aggregated CI state, with pass counts.
 fn ci_label(
     state: &crate::github::CheckState,
@@ -476,26 +509,38 @@ fn render_info_panel(
         } else {
             base_spans.push(Span::styled("main", text_style));
         }
-        if status.ahead > 0 || status.behind > 0 {
-            base_spans.push(Span::styled(" (", label_style));
+        lines.push(Line::from(base_spans));
+
+        // Remote tracking: ahead/behind are relative to the upstream branch
+        let mut remote_spans = vec![Span::styled("Remote  ", label_style)];
+        if !status.has_upstream {
+            remote_spans.push(Span::styled(
+                "not pushed (no upstream)",
+                Style::default().fg(app.palette.warning),
+            ));
+        } else if status.ahead == 0 && status.behind == 0 {
+            remote_spans.push(Span::styled(
+                "in sync",
+                Style::default().fg(app.palette.success),
+            ));
+        } else {
             if status.ahead > 0 {
-                base_spans.push(Span::styled(
-                    format!("\u{2191}{}", status.ahead),
+                remote_spans.push(Span::styled(
+                    format!("\u{2191}{} unpushed", status.ahead),
                     Style::default().fg(app.palette.info),
                 ));
             }
             if status.ahead > 0 && status.behind > 0 {
-                base_spans.push(Span::styled(" ", label_style));
+                remote_spans.push(Span::styled(" \u{b7} ", label_style));
             }
             if status.behind > 0 {
-                base_spans.push(Span::styled(
-                    format!("\u{2193}{}", status.behind),
+                remote_spans.push(Span::styled(
+                    format!("\u{2193}{} to pull", status.behind),
                     Style::default().fg(app.palette.accent),
                 ));
             }
-            base_spans.push(Span::styled(")", label_style));
         }
-        lines.push(Line::from(base_spans));
+        lines.push(Line::from(remote_spans));
 
         // Committed diff stats
         if status.lines_added > 0 || status.lines_removed > 0 {
@@ -619,6 +664,14 @@ fn render_info_panel(
             Span::styled("        ", label_style),
             Span::styled(truncated_title, Style::default().fg(color)),
         ]));
+
+        if pr.state == "OPEN"
+            && let Some(review) = review_spans(pr, &app.palette)
+        {
+            let mut spans = vec![Span::styled("Review  ", label_style)];
+            spans.extend(review);
+            lines.push(Line::from(spans));
+        }
 
         if !pr.closing_issues.is_empty() {
             let issues = pr

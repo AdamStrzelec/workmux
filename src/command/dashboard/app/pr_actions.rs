@@ -499,6 +499,8 @@ mod tests {
             state: state.into(),
             is_draft: draft,
             mergeable: mergeable.map(Into::into),
+            review_decision: None,
+            reviewers: Vec::new(),
             checks,
             check_meta: None,
             url: None,

@@ -84,6 +84,12 @@ pub struct PrSummary {
     /// GitHub mergeability: MERGEABLE, CONFLICTING or UNKNOWN (None if not fetched).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mergeable: Option<String>,
+    /// GitHub review decision: APPROVED, CHANGES_REQUESTED or REVIEW_REQUIRED.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_decision: Option<String>,
+    /// Reviewers (users or teams) whose review is still requested.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reviewers: Vec<String>,
 }
 
 /// Metadata about PR checks (timing, names) separate from aggregated state
@@ -379,6 +385,8 @@ pub fn find_pr_by_head_ref(owner: &str, branch: &str) -> Result<Option<PrSummary
         state: pr.state,
         is_draft: pr.is_draft,
         mergeable: None,
+        review_decision: None,
+        reviewers: Vec::new(),
         checks: None,
         check_meta: None,
         url: pr.url,
@@ -504,11 +512,13 @@ pub fn get_pr_details_in(repo_root: Option<&Path>, pr_number: u32) -> Result<PrD
     Ok(pr_details)
 }
 
+const PR_LIST_FIELDS_WITH_REVIEWS: &str = "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup,closingIssuesReferences,reviewDecision,reviewRequests";
 const PR_LIST_FIELDS_WITH_ISSUES_AND_CHECKS: &str = "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup,closingIssuesReferences";
 const PR_LIST_FIELDS_WITH_CHECKS: &str =
     "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup";
 const PR_LIST_FIELDS: &str = "number,title,state,isDraft,headRefName,url";
-const DASHBOARD_PR_LIST_FIELD_SETS: [&str; 3] = [
+const DASHBOARD_PR_LIST_FIELD_SETS: [&str; 4] = [
+    PR_LIST_FIELDS_WITH_REVIEWS,
     PR_LIST_FIELDS_WITH_ISSUES_AND_CHECKS,
     PR_LIST_FIELDS_WITH_CHECKS,
     PR_LIST_FIELDS,
@@ -580,6 +590,30 @@ struct PrBatchItem {
     status_check_rollup: Vec<CheckRollupItem>,
     #[serde(rename = "closingIssuesReferences", default)]
     closing_issues: Vec<RawClosingIssue>,
+    #[serde(rename = "reviewDecision", default)]
+    review_decision: Option<String>,
+    #[serde(rename = "reviewRequests", default)]
+    review_requests: Vec<RawReviewRequest>,
+}
+
+/// A requested reviewer: a user/bot (`login`) or a team (`name`/`slug`).
+#[derive(Debug, Deserialize)]
+struct RawReviewRequest {
+    #[serde(default)]
+    login: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    slug: Option<String>,
+}
+
+impl RawReviewRequest {
+    fn name(self) -> Option<String> {
+        self.login
+            .or(self.slug.map(|s| format!("@{s}")))
+            .or(self.name)
+            .filter(|s| !s.is_empty())
+    }
 }
 
 /// Fetch all PRs for the repository containing `repo_root`.
@@ -625,6 +659,8 @@ pub fn list_prs_in(repo_root: Option<&Path>) -> Result<HashMap<String, PrSummary
                     state: pr.state,
                     is_draft: pr.is_draft,
                     mergeable: pr.mergeable,
+                    review_decision: None,
+                    reviewers: Vec::new(),
                     checks,
                     check_meta,
                     url: Some(pr.url),
@@ -709,6 +745,21 @@ struct GraphqlPrNode {
     commits: GraphqlCommits,
     #[serde(rename = "closingIssuesReferences", default)]
     closing_issues: Option<GraphqlClosingIssues>,
+    #[serde(rename = "reviewDecision", default)]
+    review_decision: Option<String>,
+    #[serde(rename = "reviewRequests", default)]
+    review_requests: Option<GraphqlReviewRequests>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphqlReviewRequests {
+    nodes: Vec<GraphqlReviewRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphqlReviewRequest {
+    #[serde(rename = "requestedReviewer", default)]
+    requested_reviewer: Option<RawReviewRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1016,7 +1067,8 @@ fn build_batch_body(remotes: &[RemoteQuery]) -> Result<Vec<u8>> {
             branches.push(format!(
                 r#"    pr_r{repo_index}_b{branch_index}: pullRequests(headRefName: ${head_var}, first: 1, states: [OPEN, MERGED, CLOSED], orderBy: {{field: CREATED_AT, direction: DESC}}) {{
       nodes {{
-        number title state isDraft url mergeable
+        number title state isDraft url mergeable reviewDecision
+        reviewRequests(first: 20) {{ nodes {{ requestedReviewer {{ ... on User {{ login }} ... on Bot {{ login }} ... on Team {{ slug }} ... on Mannequin {{ login }} }} }} }}
         closingIssuesReferences(first: 100) {{ nodes {{ number repository {{ name owner {{ login }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ contexts(first: 100) {{
           nodes {{ __typename ... on CheckRun {{ name status conclusion startedAt }} ... on StatusContext {{ context state createdAt }} }}
@@ -1200,6 +1252,16 @@ fn parse_branch_summary_values(
             state: node.state,
             is_draft: node.is_draft,
             mergeable: node.mergeable,
+            review_decision: node.review_decision,
+            reviewers: node
+                .review_requests
+                .map(|r| {
+                    r.nodes
+                        .into_iter()
+                        .filter_map(|n| n.requested_reviewer.and_then(RawReviewRequest::name))
+                        .collect()
+                })
+                .unwrap_or_default(),
             checks,
             check_meta,
             url: Some(node.url),
@@ -1307,6 +1369,12 @@ fn list_prs_for_branches_rest(
                     state: pr.state,
                     is_draft: pr.is_draft,
                     mergeable: pr.mergeable,
+                    review_decision: pr.review_decision,
+                    reviewers: pr
+                        .review_requests
+                        .into_iter()
+                        .filter_map(RawReviewRequest::name)
+                        .collect(),
                     checks,
                     check_meta,
                     url: Some(pr.url),
@@ -1789,8 +1857,30 @@ mod tests {
         .unwrap();
 
         assert!(output.status.success());
-        assert_eq!(attempts.len(), 2);
-        assert!(attempts[1].contains("statusCheckRollup"));
+        assert_eq!(attempts.len(), 3);
+        assert!(attempts[0].contains("reviewDecision"));
+        assert!(attempts[2].contains("statusCheckRollup"));
+    }
+
+    #[test]
+    fn batch_item_parses_review_decision_and_requests() {
+        let item: PrBatchItem = serde_json::from_value(serde_json::json!({
+            "number": 1, "title": "t", "state": "OPEN", "isDraft": false,
+            "headRefName": "b", "url": "u",
+            "reviewDecision": "CHANGES_REQUESTED",
+            "reviewRequests": [
+                {"__typename": "User", "login": "alice"},
+                {"__typename": "Team", "name": "Core", "slug": "core"}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(item.review_decision.as_deref(), Some("CHANGES_REQUESTED"));
+        let names: Vec<String> = item
+            .review_requests
+            .into_iter()
+            .filter_map(RawReviewRequest::name)
+            .collect();
+        assert_eq!(names, ["alice", "@core"]);
     }
 
     #[test]
