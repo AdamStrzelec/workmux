@@ -419,6 +419,27 @@ fn last_commit(log: &str) -> Option<(&str, &str)> {
 }
 
 /// Info panel takes ~45% of the preview, between 40 and 90 columns.
+/// Most recent activity timestamp among agents running inside `worktree`.
+/// An agent belongs to the worktree whose path is the longest prefix of its
+/// cwd, so agents in nested worktrees are not counted for the parent.
+fn last_agent_activity(
+    agents: &[crate::multiplexer::AgentPane],
+    worktree: &std::path::Path,
+    all_worktrees: &[&std::path::Path],
+) -> Option<u64> {
+    agents
+        .iter()
+        .filter(|a| {
+            all_worktrees
+                .iter()
+                .filter(|w| a.path.starts_with(w))
+                .max_by_key(|w| w.as_os_str().len())
+                .is_some_and(|owner| *owner == worktree)
+        })
+        .filter_map(|a| a.activity_ts())
+        .max()
+}
+
 fn info_panel_width(total: u16) -> u16 {
     (u32::from(total) * 45 / 100)
         .clamp(40, 90)
@@ -529,6 +550,22 @@ fn render_info_panel(
         Span::styled("Path    ", label_style),
         Span::styled(truncate_start(&tilde_path(&wt.path), path_max), label_style),
     ]));
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    // Worktree age
+    if let Some(created) = wt.created_at {
+        lines.push(Line::from(vec![
+            Span::styled("Age     ", label_style),
+            Span::styled(
+                format!("{} old", agent::format_age(now.saturating_sub(created))),
+                text_style,
+            ),
+        ]));
+    }
 
     // Git status details (base branch, ahead/behind, diff stats)
     let git_status = app.git_statuses.get(&wt.path);
@@ -807,6 +844,17 @@ fn render_info_panel(
             AgentStatusFormat::DetailLine,
         ) {
             agent_spans.push(Span::styled(text, style));
+        }
+        let worktree_paths: Vec<&std::path::Path> =
+            app.worktrees.iter().map(|w| w.path.as_path()).collect();
+        if let Some(ts) = last_agent_activity(&app.agents, &wt.path, &worktree_paths) {
+            agent_spans.push(Span::styled(
+                format!(
+                    " \u{b7} active {} ago",
+                    agent::format_age(now.saturating_sub(ts))
+                ),
+                label_style,
+            ));
         }
         lines.push(Line::from(agent_spans));
     }
@@ -1098,6 +1146,38 @@ mod tests {
         assert_eq!(info_panel_width(150), 67);
         assert_eq!(info_panel_width(300), 90);
         assert_eq!(info_panel_width(30), 30);
+    }
+
+    #[test]
+    fn last_agent_activity_skips_agents_of_nested_worktrees() {
+        use std::path::{Path, PathBuf};
+        let agent = |path: &str, ts: u64| crate::multiplexer::AgentPane {
+            session: String::new(),
+            window_name: String::new(),
+            pane_id: String::new(),
+            window_id: String::new(),
+            window_index: None,
+            path: PathBuf::from(path),
+            pane_title: None,
+            status: None,
+            status_ts: Some(ts),
+            activity_ts: Some(ts),
+            updated_ts: None,
+            window_cmd: None,
+            agent_command: None,
+            agent_kind: None,
+            prompt: None,
+            remote: None,
+        };
+        let agents = [
+            agent("/repo/src", 100),
+            agent("/repo/.worktrees/feat", 300),
+            agent("/other", 500),
+        ];
+        let all = [Path::new("/repo"), Path::new("/repo/.worktrees/feat")];
+        assert_eq!(last_agent_activity(&agents, all[0], &all), Some(100));
+        assert_eq!(last_agent_activity(&agents, all[1], &all), Some(300));
+        assert_eq!(last_agent_activity(&agents, Path::new("/none"), &all), None);
     }
 
     #[test]
