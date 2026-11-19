@@ -120,7 +120,20 @@ fn usage_header_line(app: &App) -> Option<Line<'static>> {
         .unwrap_or_default();
     let mut spans: Vec<Span<'static>> = Vec::new();
     for (label, window) in [("5h", &snap.session), ("7d", &snap.weekly)] {
-        let Some(p) = window.as_ref().and_then(|w| w.used_percent) else {
+        let percent = window.as_ref().and_then(|w| w.used_percent);
+        // No 5h window means no usage since the last reset: show it as idle at 0%.
+        if percent.is_none() && label == "5h" {
+            spans.push(Span::styled(
+                format!("{label} "),
+                Style::default().fg(app.palette.dimmed),
+            ));
+            spans.push(Span::styled(
+                format!("{} 0%", crate::usage::format::bar(0, USAGE_BAR_WIDTH)),
+                Style::default().fg(app.palette.dimmed),
+            ));
+            continue;
+        }
+        let Some(p) = percent else {
             continue;
         };
         if !spans.is_empty() {
