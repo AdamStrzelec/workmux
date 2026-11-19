@@ -15,3 +15,5 @@ files:
 
 pre_merge:
   - just check-ci
+
+base_branch: adam
