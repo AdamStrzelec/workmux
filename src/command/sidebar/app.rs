@@ -292,6 +292,10 @@ pub struct SidebarApp {
     pub list_state: ListState,
     pub should_quit: bool,
     pub pending_exit: bool,
+    /// Whether the sidebar pane currently has terminal focus.
+    pub focused: bool,
+    /// Theme selection background before the focus boost is applied.
+    base_highlight_row_bg: ratatui::style::Color,
     /// Whether the key overlay is open.
     pub show_help: bool,
     /// Whether this sidebar still offers the grouping hint.
@@ -402,6 +406,12 @@ impl SidebarApp {
             list_state: ListState::default(),
             should_quit: false,
             pending_exit: false,
+            focused: false,
+            base_highlight_row_bg: ThemePalette::from_config(
+                &Config::default().theme,
+                ThemeMode::Dark,
+            )
+            .highlight_row_bg,
             show_help: false,
             hint_pending: false,
             quit_silent: false,
@@ -503,6 +513,8 @@ impl SidebarApp {
             list_state: ListState::default(),
             should_quit: false,
             pending_exit: false,
+            focused: false,
+            base_highlight_row_bg: palette.highlight_row_bg,
             show_help: false,
             hint_pending: claim_hint_for_this_version(),
             quit_silent: false,
@@ -804,6 +816,24 @@ impl SidebarApp {
     fn apply_theme_config(&mut self, theme: &ThemeConfig) {
         let mode = theme.mode.unwrap_or(self.detected_theme_mode);
         self.palette = ThemePalette::from_config(theme, mode);
+        self.base_highlight_row_bg = self.palette.highlight_row_bg;
+        self.apply_focus_highlight();
+    }
+
+    /// Record a terminal focus change and restyle the selection.
+    pub fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+        self.apply_focus_highlight();
+    }
+
+    /// A focused sidebar draws its selection noticeably stronger, so the
+    /// active row stands out while navigating.
+    fn apply_focus_highlight(&mut self) {
+        self.palette.highlight_row_bg = if self.focused {
+            focused_highlight(self.base_highlight_row_bg, self.palette.accent)
+        } else {
+            self.base_highlight_row_bg
+        };
     }
 
     pub(super) fn host_identity(&self) -> Option<&HostIdentity> {
@@ -3478,5 +3508,33 @@ mod filter_tests {
     #[test]
     fn filter_mode_default_shows_all_sessions() {
         assert_eq!(SidebarFilterMode::default(), SidebarFilterMode::None);
+    }
+}
+
+/// Blend the selection background toward the accent color.
+pub(super) fn focused_highlight(
+    base: ratatui::style::Color,
+    accent: ratatui::style::Color,
+) -> ratatui::style::Color {
+    use ratatui::style::Color;
+    match (base, accent) {
+        (Color::Rgb(br, bg, bb), Color::Rgb(ar, ag, ab)) => {
+            let mix = |b: u8, a: u8| (b as f32 + (a as f32 - b as f32) * 0.45).round() as u8;
+            Color::Rgb(mix(br, ar), mix(bg, ag), mix(bb, ab))
+        }
+        _ => accent,
+    }
+}
+
+#[cfg(test)]
+mod focus_highlight_tests {
+    use super::focused_highlight;
+    use ratatui::style::Color;
+
+    #[test]
+    fn focused_highlight_moves_toward_accent() {
+        let got = focused_highlight(Color::Rgb(40, 48, 62), Color::Rgb(203, 166, 247));
+        assert_eq!(got, Color::Rgb(113, 101, 145));
+        assert_eq!(focused_highlight(Color::Reset, Color::Blue), Color::Blue);
     }
 }
