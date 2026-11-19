@@ -300,6 +300,12 @@ fn handle_terminal_event(
     event: Event,
     last_preview_refresh: &mut std::time::Instant,
 ) {
+    // Aim client switches at the terminal this keypress came from, even if the
+    // action outlives the moment and the user moves to another window.
+    if matches!(&event, Event::Key(key) if key.kind == KeyEventKind::Press) {
+        app.mux.pin_client();
+    }
+
     // Sweep in progress - block all input except Ctrl+C until complete
     if app.sweep_progress.is_some() {
         if let Event::Key(key) = &event
