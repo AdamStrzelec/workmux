@@ -32,6 +32,20 @@ pub struct TmuxBackend {
     pinned_client: std::sync::Mutex<Option<String>>,
 }
 
+/// Name of the most recently active client in `list-clients` output of
+/// `activity<TAB>name` lines.
+fn most_recent_client(listing: &str) -> Option<String> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let (activity, name) = line.split_once('\t')?;
+            Some((activity.trim().parse::<u64>().ok()?, name.trim()))
+        })
+        .filter(|(_, name)| !name.is_empty())
+        .max_by_key(|(activity, _)| *activity)
+        .map(|(_, name)| name.to_string())
+}
+
 /// Arguments for `switch-client`, aimed at `client` when one is pinned.
 fn switch_client_args<'a>(client: Option<&'a str>, rest: &[&'a str]) -> Vec<&'a str> {
     let mut args = vec!["switch-client"];
@@ -899,11 +913,24 @@ impl Multiplexer for TmuxBackend {
     }
 
     fn pin_client(&self) {
+        // Ask for the clients of our own session, not for "the current
+        // client". Popups (the dashboard) have no TMUX_PANE, so tmux would pick
+        // the most recently active client of the whole server, and keys typed
+        // inside a popup do not count as activity: that is another terminal
+        // window whenever the user touched it after opening the popup.
         let client = self
-            .tmux_query(&["display-message", "-p", "#{client_name}"])
-            .ok()
-            .map(|name| name.trim().to_string())
-            .filter(|name| !name.is_empty());
+            .location_target()
+            .and_then(|target| {
+                self.tmux_query(&[
+                    "list-clients",
+                    "-t",
+                    &target,
+                    "-F",
+                    "#{client_activity}\t#{client_name}",
+                ])
+                .ok()
+            })
+            .and_then(|listing| most_recent_client(&listing));
         if let Ok(mut pinned) = self.pinned_client.lock() {
             *pinned = client;
         }
@@ -1805,6 +1832,18 @@ mod tests {
             backend.shell_switch_client("-t 'work'"),
             "{ tmux switch-client -c '/dev/ttys051' -t 'work' || tmux switch-client -t 'work'; } >/dev/null 2>&1"
         );
+    }
+
+    #[test]
+    fn most_recent_client_wins() {
+        let listing = "100\t/dev/ttys001\n250\t/dev/ttys002\n180\t/dev/ttys003\n";
+        assert_eq!(most_recent_client(listing).as_deref(), Some("/dev/ttys002"));
+    }
+
+    #[test]
+    fn most_recent_client_is_none_without_clients() {
+        assert_eq!(most_recent_client(""), None);
+        assert_eq!(most_recent_client("garbage line\n"), None);
     }
 
     #[test]
