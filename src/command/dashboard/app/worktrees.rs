@@ -1494,16 +1494,18 @@ impl App {
 
     /// Update the preview for the selected worktree (git log)
     fn update_worktree_preview(&mut self) {
-        let current_path = self
+        let selected = self
             .worktree_table_state
             .selected()
-            .and_then(|idx| self.worktrees.get(idx))
-            .map(|w| w.path.clone());
+            .and_then(|idx| self.worktrees.get(idx));
+        let current_path = selected.map(|w| w.path.clone());
+        let branch = selected.map(|w| w.branch.clone()).unwrap_or_default();
 
         if current_path != self.worktree_preview_path {
             self.worktree_preview_path = current_path.clone();
             self.worktree_preview = None;
             self.worktree_files = None;
+            self.worktree_stashes = None;
 
             if let Some(path) = current_path {
                 let tx = self.event_tx.clone();
@@ -1529,7 +1531,23 @@ impl App {
                     {
                         let files =
                             super::types::parse_porcelain(&String::from_utf8_lossy(&out.stdout));
-                        let _ = tx.send(AppEvent::WorktreeFiles(path, files));
+                        let _ = tx.send(AppEvent::WorktreeFiles(path.clone(), files));
+                    }
+                    let stashes =
+                        crate::git::unattended_git(Some(&path)).and_then(|mut command| {
+                            command
+                                .args(["stash", "list", "--format=%gs"])
+                                .output()
+                                .map_err(anyhow::Error::from)
+                        });
+                    if let Ok(out) = stashes
+                        && out.status.success()
+                    {
+                        let count = super::types::count_branch_stashes(
+                            &String::from_utf8_lossy(&out.stdout),
+                            &branch,
+                        );
+                        let _ = tx.send(AppEvent::WorktreeStashes(path, count));
                     }
                 });
             }
@@ -1670,6 +1688,8 @@ mod tests {
             mergeable: None,
             review_decision: None,
             reviewers: Vec::new(),
+            labels: Vec::new(),
+            assignees: Vec::new(),
             checks: None,
             check_meta: None,
             url: None,

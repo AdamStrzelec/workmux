@@ -90,6 +90,12 @@ pub struct PrSummary {
     /// Reviewers (users or teams) whose review is still requested.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reviewers: Vec<String>,
+    /// Label names on the pull request.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    /// Logins of users assigned to the pull request.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assignees: Vec<String>,
 }
 
 /// Metadata about PR checks (timing, names) separate from aggregated state
@@ -387,6 +393,8 @@ pub fn find_pr_by_head_ref(owner: &str, branch: &str) -> Result<Option<PrSummary
         mergeable: None,
         review_decision: None,
         reviewers: Vec::new(),
+        labels: Vec::new(),
+        assignees: Vec::new(),
         checks: None,
         check_meta: None,
         url: pr.url,
@@ -512,7 +520,7 @@ pub fn get_pr_details_in(repo_root: Option<&Path>, pr_number: u32) -> Result<PrD
     Ok(pr_details)
 }
 
-const PR_LIST_FIELDS_WITH_REVIEWS: &str = "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup,closingIssuesReferences,reviewDecision,reviewRequests";
+const PR_LIST_FIELDS_WITH_REVIEWS: &str = "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup,closingIssuesReferences,reviewDecision,reviewRequests,labels,assignees";
 const PR_LIST_FIELDS_WITH_ISSUES_AND_CHECKS: &str = "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup,closingIssuesReferences";
 const PR_LIST_FIELDS_WITH_CHECKS: &str =
     "number,title,state,isDraft,headRefName,url,mergeable,statusCheckRollup";
@@ -594,6 +602,30 @@ struct PrBatchItem {
     review_decision: Option<String>,
     #[serde(rename = "reviewRequests", default)]
     review_requests: Vec<RawReviewRequest>,
+    #[serde(default)]
+    labels: Vec<RawLabel>,
+    #[serde(default)]
+    assignees: Vec<RawAssignee>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawLabel {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawAssignee {
+    login: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphqlLabels {
+    nodes: Vec<RawLabel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphqlAssignees {
+    nodes: Vec<RawAssignee>,
 }
 
 /// A requested reviewer: a user/bot (`login`) or a team (`name`/`slug`).
@@ -661,6 +693,8 @@ pub fn list_prs_in(repo_root: Option<&Path>) -> Result<HashMap<String, PrSummary
                     mergeable: pr.mergeable,
                     review_decision: None,
                     reviewers: Vec::new(),
+                    labels: Vec::new(),
+                    assignees: Vec::new(),
                     checks,
                     check_meta,
                     url: Some(pr.url),
@@ -749,6 +783,10 @@ struct GraphqlPrNode {
     review_decision: Option<String>,
     #[serde(rename = "reviewRequests", default)]
     review_requests: Option<GraphqlReviewRequests>,
+    #[serde(default)]
+    labels: Option<GraphqlLabels>,
+    #[serde(default)]
+    assignees: Option<GraphqlAssignees>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1069,6 +1107,7 @@ fn build_batch_body(remotes: &[RemoteQuery]) -> Result<Vec<u8>> {
       nodes {{
         number title state isDraft url mergeable reviewDecision
         reviewRequests(first: 20) {{ nodes {{ requestedReviewer {{ ... on User {{ login }} ... on Bot {{ login }} ... on Team {{ slug }} ... on Mannequin {{ login }} }} }} }}
+        labels(first: 20) {{ nodes {{ name }} }} assignees(first: 20) {{ nodes {{ login }} }}
         closingIssuesReferences(first: 100) {{ nodes {{ number repository {{ name owner {{ login }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ contexts(first: 100) {{
           nodes {{ __typename ... on CheckRun {{ name status conclusion startedAt }} ... on StatusContext {{ context state createdAt }} }}
@@ -1262,6 +1301,14 @@ fn parse_branch_summary_values(
                         .collect()
                 })
                 .unwrap_or_default(),
+            labels: node
+                .labels
+                .map(|l| l.nodes.into_iter().map(|n| n.name).collect())
+                .unwrap_or_default(),
+            assignees: node
+                .assignees
+                .map(|a| a.nodes.into_iter().map(|n| n.login).collect())
+                .unwrap_or_default(),
             checks,
             check_meta,
             url: Some(node.url),
@@ -1375,6 +1422,8 @@ fn list_prs_for_branches_rest(
                         .into_iter()
                         .filter_map(RawReviewRequest::name)
                         .collect(),
+                    labels: pr.labels.into_iter().map(|l| l.name).collect(),
+                    assignees: pr.assignees.into_iter().map(|a| a.login).collect(),
                     checks,
                     check_meta,
                     url: Some(pr.url),
@@ -1881,6 +1930,19 @@ mod tests {
             .filter_map(RawReviewRequest::name)
             .collect();
         assert_eq!(names, ["alice", "@core"]);
+    }
+
+    #[test]
+    fn batch_item_parses_labels_and_assignees() {
+        let item: PrBatchItem = serde_json::from_value(serde_json::json!({
+            "number": 1, "title": "t", "state": "OPEN", "isDraft": false,
+            "headRefName": "b", "url": "u",
+            "labels": [{"id": "x", "name": "bug", "color": "red"}],
+            "assignees": [{"id": "y", "login": "alice", "name": "Alice"}]
+        }))
+        .unwrap();
+        assert_eq!(item.labels[0].name, "bug");
+        assert_eq!(item.assignees[0].login, "alice");
     }
 
     #[test]

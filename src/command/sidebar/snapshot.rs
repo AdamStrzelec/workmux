@@ -487,6 +487,8 @@ mod tests {
             mergeable: None,
             review_decision: None,
             reviewers: Vec::new(),
+            labels: Vec::new(),
+            assignees: Vec::new(),
             checks: None,
             check_meta: None,
             url: None,

@@ -501,6 +501,8 @@ mod tests {
             mergeable: mergeable.map(Into::into),
             review_decision: None,
             reviewers: Vec::new(),
+            labels: Vec::new(),
+            assignees: Vec::new(),
             checks,
             check_meta: None,
             url: None,

@@ -704,6 +704,20 @@ fn render_info_panel(
             lines.push(Line::from(spans));
         }
 
+        if !pr.labels.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("Labels  ", label_style),
+                Span::styled(pr.labels.join(", "), Style::default().fg(app.palette.info)),
+            ]));
+        }
+
+        if !pr.assignees.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("Assign  ", label_style),
+                Span::styled(pr.assignees.join(", "), text_style),
+            ]));
+        }
+
         if !pr.closing_issues.is_empty() {
             let issues = pr
                 .closing_issues
@@ -766,6 +780,18 @@ fn render_info_panel(
             Span::styled("Commit  ", label_style),
             Span::styled(author.to_string(), text_style),
             Span::styled(format!(" \u{b7} {age}"), label_style),
+        ]));
+    }
+
+    // Stash entries made on this branch
+    if let Some(count) = app.worktree_stashes.filter(|c| *c > 0) {
+        let noun = if count == 1 { "entry" } else { "entries" };
+        lines.push(Line::from(vec![
+            Span::styled("Stash   ", label_style),
+            Span::styled(
+                format!("{count} {noun}"),
+                Style::default().fg(app.palette.warning),
+            ),
         ]));
     }
 

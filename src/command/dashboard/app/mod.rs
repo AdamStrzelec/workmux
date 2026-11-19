@@ -202,6 +202,8 @@ pub struct App {
     worktree_preview_path: Option<PathBuf>,
     /// Changed files (`git status`) of the selected worktree
     pub worktree_files: Option<Vec<FileChange>>,
+    /// Stash entries on the selected worktree's branch
+    pub worktree_stashes: Option<usize>,
     /// Temporary status message shown in the footer (auto-clears after timeout)
     pub status_message: Option<(String, std::time::Instant)>,
     /// Error shown in a modal until dismissed (promoted from status_message).
@@ -368,6 +370,7 @@ impl App {
             worktree_preview: None,
             worktree_preview_path: None,
             worktree_files: None,
+            worktree_stashes: None,
             status_message: None,
             error_modal: None,
             audit_view: None,

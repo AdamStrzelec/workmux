@@ -511,6 +511,8 @@ mod tests {
             mergeable: None,
             review_decision: None,
             reviewers: Vec::new(),
+            labels: Vec::new(),
+            assignees: Vec::new(),
             checks: None,
             check_meta: None,
             url: Some("https://github.com/raine/workmux/pull/42".into()),

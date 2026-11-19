@@ -31,6 +31,8 @@ pub enum AppEvent {
     WorktreeLog(PathBuf, String),
     /// `git status --porcelain` entries for the selected worktree.
     WorktreeFiles(PathBuf, Vec<FileChange>),
+    /// Number of stash entries created on the selected worktree's branch.
+    WorktreeStashes(PathBuf, usize),
     /// Result of a confirmed background removal.
     RemoveWorktreeResult(
         PathBuf,
@@ -833,5 +835,28 @@ mod file_change_tests {
     #[test]
     fn empty_output_is_clean() {
         assert!(parse_porcelain("").is_empty());
+    }
+}
+
+/// Count stash entries (from `git stash list --format=%gs`) made on `branch`.
+pub fn count_branch_stashes(output: &str, branch: &str) -> usize {
+    let wip = format!("WIP on {branch}:");
+    let on = format!("On {branch}:");
+    output
+        .lines()
+        .filter(|l| l.starts_with(&wip) || l.starts_with(&on))
+        .count()
+}
+
+#[cfg(test)]
+mod stash_tests {
+    use super::count_branch_stashes;
+
+    #[test]
+    fn counts_only_matching_branch() {
+        let out = "WIP on feat: abc msg\nOn feat: named\nOn feat-2: other\nWIP on main: x";
+        assert_eq!(count_branch_stashes(out, "feat"), 2);
+        assert_eq!(count_branch_stashes(out, "main"), 1);
+        assert_eq!(count_branch_stashes("", "feat"), 0);
     }
 }
