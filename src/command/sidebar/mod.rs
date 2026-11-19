@@ -577,8 +577,10 @@ fn sidebar_mux() -> Result<std::sync::Arc<dyn Multiplexer>> {
 }
 
 fn stop_all() {
-    kill_all_sidebars_and_restore_layouts();
+    // Stop the daemon first: its heal loop would otherwise recreate sidebars
+    // while they are being torn down.
     kill_daemon();
+    kill_all_sidebars_and_restore_layouts();
     remove_hooks();
     clear_sidebar_globals();
 }
@@ -691,11 +693,96 @@ pub fn toggle(
 
     let current_has_sidebar = find_sidebar_in_window(&current_window).unwrap_or(false);
 
+    // Turning off from one window only hides the sidebar in this session;
+    // `workmux sidebar off` still stops it everywhere.
     if current_has_sidebar {
-        off()
+        return off_session();
+    }
+    let session_id = get_current_session_id()?;
+    if matches!(current_scope(), SidebarScope::Global) && session_opted_out(&session_id) {
+        on_session(position, width, height)
     } else {
         on(position, width, height)
     }
+}
+
+/// Pick windows that should host a sidebar but do not.
+///
+/// `windows` lines are `<window_id> <session_id> <extent>`; `with_sidebar`
+/// holds window ids that already have one.
+fn windows_missing_sidebar<'a>(
+    scope: &SidebarScope,
+    optouts: &std::collections::HashSet<String>,
+    windows: &'a str,
+    with_sidebar: &std::collections::HashSet<&str>,
+) -> Vec<(&'a str, u16)> {
+    windows
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let window_id = parts.next()?;
+            let session_id = parts.next()?;
+            let extent = parts.next().and_then(|e| e.parse().ok()).unwrap_or(0);
+            let in_scope = match scope {
+                SidebarScope::Global => !optouts.contains(session_id),
+                SidebarScope::Sessions(ids) => ids.contains(session_id),
+                SidebarScope::Off => false,
+            };
+            (in_scope && !with_sidebar.contains(window_id)).then_some((window_id, extent))
+        })
+        .collect()
+}
+
+/// Recreate sidebars missing from in-scope windows and reinstall tmux hooks.
+///
+/// Called periodically by the daemon. Windows created without firing
+/// `after-new-window` (or with a stale hook from an older binary) would
+/// otherwise stay without a sidebar until it is toggled again.
+pub(super) fn heal_missing_sidebars() -> Result<()> {
+    let scope = current_scope();
+    if matches!(scope, SidebarScope::Off) {
+        return Ok(());
+    }
+    let config = crate::config::Config::load(None).unwrap_or_default();
+    let position = read_sidebar_position(&config);
+    let extent = match position {
+        SidebarPosition::Left => "#{window_width}",
+        SidebarPosition::Top => "#{window_height}",
+    };
+    let windows = Cmd::new("tmux")
+        .args(&[
+            "list-windows",
+            "-a",
+            "-F",
+            &format!("#{{window_id}} #{{session_id}} {extent}"),
+        ])
+        .run_and_capture_stdout()?;
+    let panes = Cmd::new("tmux")
+        .args(&["list-panes", "-a", "-F", "#{window_id} #{@workmux_role}"])
+        .run_and_capture_stdout()?;
+    let with_sidebar: std::collections::HashSet<&str> = panes
+        .lines()
+        .filter_map(|l| l.split_once(' '))
+        .filter(|(_, role)| role.trim() == SIDEBAR_ROLE_VALUE)
+        .map(|(w, _)| w)
+        .collect();
+    let optouts = current_optout_sessions();
+    for (window_id, window_extent) in
+        windows_missing_sidebar(&scope, &optouts, &windows, &with_sidebar)
+    {
+        // Re-check: `off` may have run since the scope was read.
+        if matches!(current_scope(), SidebarScope::Off) {
+            return Ok(());
+        }
+        let size = effective_size_for(&config, position, window_extent);
+        if let Err(error) = create_sidebar_in_window(window_id, position, size) {
+            tracing::debug!(window_id, %error, "heal_missing_sidebars: create failed");
+        }
+    }
+    if !matches!(current_scope(), SidebarScope::Off) {
+        install_hooks()?;
+    }
+    Ok(())
 }
 
 /// Ensure the sidebar is running for the current tmux session.
@@ -1311,6 +1398,32 @@ pub fn set_filter_mode(mode: Option<&str>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::{SidebarScope, windows_missing_sidebar};
+    use std::collections::HashSet;
+
+    #[test]
+    fn heal_picks_only_in_scope_windows_without_sidebar() {
+        let windows = "@1 $0 200\n@2 $0 180\n@3 $1 150\n@4 $2 100\n";
+        let with_sidebar: HashSet<&str> = ["@1"].into_iter().collect();
+        let optouts: HashSet<String> = ["$2".to_string()].into_iter().collect();
+        let got = windows_missing_sidebar(&SidebarScope::Global, &optouts, windows, &with_sidebar);
+        assert_eq!(got, vec![("@2", 180), ("@3", 150)]);
+
+        let ids: HashSet<String> = ["$1".to_string()].into_iter().collect();
+        let got = windows_missing_sidebar(
+            &SidebarScope::Sessions(ids),
+            &HashSet::new(),
+            windows,
+            &with_sidebar,
+        );
+        assert_eq!(got, vec![("@3", 150)]);
+
+        assert!(
+            windows_missing_sidebar(&SidebarScope::Off, &HashSet::new(), windows, &with_sidebar)
+                .is_empty()
+        );
+    }
+
     use super::*;
 
     #[test]
