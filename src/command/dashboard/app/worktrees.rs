@@ -10,6 +10,7 @@ use anyhow::Context as _;
 
 use crate::git;
 use crate::multiplexer::Multiplexer;
+use crate::state::projects::ProjectRegistry;
 use crate::workflow;
 
 use super::super::agent;
@@ -761,28 +762,16 @@ impl App {
 
     /// Discover projects from cached repo roots and open the picker modal.
     pub fn show_project_picker(&mut self) {
-        // Deduplicate by project name, keeping one representative path per project
-        let mut by_name: std::collections::BTreeMap<String, PathBuf> =
-            std::collections::BTreeMap::new();
+        // Projects seen in earlier sessions stay listed after their agents are gone
+        let remembered = ProjectRegistry::open()
+            .map(|registry| registry.load())
+            .unwrap_or_default();
 
-        for root in self.repo_roots.values() {
-            let name = agent::extract_project_name(root);
-            by_name.entry(name).or_insert_with(|| root.clone());
-        }
-
-        // Projects pinned in config are listed even without running agents
-        for root in self.config.extra_projects() {
-            if !root.is_dir() {
-                continue;
-            }
-            let name = agent::extract_project_name(&root);
-            by_name.entry(name).or_insert(root);
-        }
-
-        let projects: Vec<ProjectEntry> = by_name
-            .into_iter()
-            .map(|(name, path)| ProjectEntry { name, path })
-            .collect();
+        let projects = collect_projects(
+            self.repo_roots.values(),
+            self.config.extra_projects(),
+            remembered,
+        );
 
         let current_name = self
             .worktree_project_override
@@ -1534,10 +1523,87 @@ impl App {
     }
 }
 
+/// Merge project sources into picker entries, one per project name.
+///
+/// Sources are listed by priority: roots of live agents win over projects
+/// pinned in config, which win over roots remembered from earlier sessions.
+/// Pinned roots that no longer exist are skipped.
+fn collect_projects<'a>(
+    live: impl IntoIterator<Item = &'a PathBuf>,
+    pinned: impl IntoIterator<Item = PathBuf>,
+    remembered: impl IntoIterator<Item = PathBuf>,
+) -> Vec<ProjectEntry> {
+    let mut by_name: std::collections::BTreeMap<String, PathBuf> =
+        std::collections::BTreeMap::new();
+
+    for root in live {
+        let name = agent::extract_project_name(root);
+        by_name.entry(name).or_insert_with(|| root.clone());
+    }
+
+    for root in pinned.into_iter().chain(remembered) {
+        if !root.is_dir() {
+            continue;
+        }
+        let name = agent::extract_project_name(&root);
+        by_name.entry(name).or_insert(root);
+    }
+
+    by_name
+        .into_iter()
+        .map(|(name, path)| ProjectEntry { name, path })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::MuxMode;
+
+    fn git_root(parent: &Path, name: &str) -> PathBuf {
+        let root = parent.join(name);
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        root
+    }
+
+    fn names(projects: &[ProjectEntry]) -> Vec<&str> {
+        projects.iter().map(|p| p.name.as_str()).collect()
+    }
+
+    #[test]
+    fn collect_projects_lists_remembered_project_without_live_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = git_root(dir.path(), "alpha");
+        let idle = git_root(dir.path(), "beta");
+
+        let projects = collect_projects([&live], Vec::new(), vec![idle.clone()]);
+
+        assert_eq!(names(&projects), vec!["alpha", "beta"]);
+        assert_eq!(projects[1].path, idle);
+    }
+
+    #[test]
+    fn collect_projects_prefers_live_root_over_remembered_with_same_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = git_root(&dir.path().join("one"), "app");
+        let stale = git_root(&dir.path().join("two"), "app");
+
+        let projects = collect_projects([&live], Vec::new(), vec![stale]);
+
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].path, live);
+    }
+
+    #[test]
+    fn collect_projects_skips_roots_that_no_longer_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("gone");
+
+        let projects = collect_projects([], vec![missing.clone()], vec![missing]);
+
+        assert!(projects.is_empty());
+    }
+
     use crate::github::{ClosingIssue, PrSummary};
     use crate::workflow::types::WorktreeInfo;
     use std::collections::HashMap;

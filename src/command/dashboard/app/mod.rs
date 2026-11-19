@@ -460,13 +460,24 @@ impl App {
                 .filter_map(|handle| handle.join().ok())
                 .collect();
 
+            let mut discovered: Vec<PathBuf> = Vec::new();
             for (path, root, key) in results {
                 if let Some(r) = root {
+                    discovered.push(r.clone());
                     self.repo_roots.insert(path.clone(), r);
                 }
                 if let Some(key) = key {
                     self.repo_keys.insert(path, key);
                 }
+            }
+
+            // Remember local roots so the project picker outlives their agents.
+            // Best effort: a failed write must not disturb the dashboard.
+            if !discovered.is_empty()
+                && let Ok(registry) = crate::state::projects::ProjectRegistry::open()
+                && let Err(err) = registry.record(&discovered)
+            {
+                tracing::debug!(error = %err, "failed to record known projects");
             }
         }
 
