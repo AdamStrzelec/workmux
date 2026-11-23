@@ -128,7 +128,12 @@ pub fn run_sidebar() -> Result<()> {
         // Render before blocking (redraws only when state changed)
         if needs_render {
             if needs_clear {
-                terminal.clear()?;
+                // `Terminal::clear` queries the cursor position (DSR), and the
+                // input thread consumes the reply, so the query times out and
+                // the sidebar exits. A fullscreen resize clears the screen and
+                // resets the back buffer without querying the terminal.
+                let area = terminal.size()?.into();
+                terminal.resize(area)?;
                 needs_clear = false;
             }
             terminal.draw(|f| render_sidebar(f, &mut app))?;

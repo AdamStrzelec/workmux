@@ -500,7 +500,7 @@ impl SidebarApp {
         let initial_window_width = query_window_width_for_pane();
         let initial_window_height = query_window_height_for_pane();
 
-        Ok(Self {
+        let mut app = Self {
             mux,
             agents: Vec::new(),
             has_loaded_snapshot: false,
@@ -561,7 +561,10 @@ impl SidebarApp {
             suppress_resize_once: false,
             view_name: None,
             filter_mode: SidebarFilterMode::default(),
-        })
+        };
+        // Tint the selection from the first frame, before any focus event.
+        app.apply_focus_highlight();
+        Ok(app)
     }
 
     /// Apply a snapshot received from the daemon.
@@ -707,8 +710,11 @@ impl SidebarApp {
         if self.selection_mode != SelectionMode::FollowHost {
             return;
         }
-        if let Some(idx) = self.host_agent_idx {
-            self.select_agent(Some(idx));
+        // A host window without an agent (e.g. a plain shell tab) highlights
+        // nothing; keeping the previous selection would point at an agent
+        // the user is not in.
+        if self.host_agent_idx.is_some() || self.host_window_id().is_some() {
+            self.select_agent(self.host_agent_idx);
         }
         *self.list_state.offset_mut() = 0;
         self.first_visible_agent_idx = 0;
@@ -829,15 +835,17 @@ impl SidebarApp {
     /// A focused sidebar draws its selection noticeably stronger, so the
     /// active row stands out while navigating.
     fn apply_focus_highlight(&mut self) {
-        self.palette.highlight_row_bg = if self.focused {
-            focused_highlight(
-                self.base_highlight_row_bg,
-                self.palette.accent,
-                self.palette.text,
-            )
-        } else {
-            self.base_highlight_row_bg
-        };
+        // The selection tracks the agent the user is in, so even an
+        // unfocused sidebar tints it toward the accent to make it easy to
+        // spot; focus pushes the tint further.
+        let max_blend = if self.focused { 0.40 } else { 0.20 };
+        self.palette.highlight_row_bg = focused_highlight(
+            self.base_highlight_row_bg,
+            self.palette.accent,
+            self.palette.text,
+            self.palette.dimmed,
+            max_blend,
+        );
     }
 
     pub(super) fn host_identity(&self) -> Option<&HostIdentity> {
@@ -3515,15 +3523,19 @@ mod filter_tests {
     }
 }
 
-/// Blend the selection background toward the accent color.
+/// Selection background tinted with the accent color.
 ///
-/// Uses the strongest blend (up to 40%) that keeps the row text at a
-/// WCAG contrast of at least 4.5:1, so focus is visible without washing out
-/// the selected item's text.
+/// On a dark theme the background is a deep, saturated shade of the accent
+/// (the accent itself is usually a pastel that washes text out). On a light
+/// theme the base selection is blended toward the accent. Either way the
+/// strongest tint up to `max_blend` is used that keeps the row text at a
+/// contrast of at least 7:1 and secondary (dimmed) text at least 3:1.
 pub(super) fn focused_highlight(
     base: ratatui::style::Color,
     accent: ratatui::style::Color,
     text: ratatui::style::Color,
+    dimmed: ratatui::style::Color,
+    max_blend: f32,
 ) -> ratatui::style::Color {
     use ratatui::style::Color;
     let (Color::Rgb(br, bg, bb), Color::Rgb(ar, ag, ab)) = (base, accent) else {
@@ -3534,13 +3546,33 @@ pub(super) fn focused_highlight(
         Color::Rgb(m(br, ar), m(bg, ag), m(bb, ab))
     };
     let Color::Rgb(..) = text else {
-        return mix(0.25);
+        return mix(max_blend.min(0.25));
     };
-    let mut t = 0.40;
+    let dark_theme = relative_luminance(text) > relative_luminance(base);
+    // Push the accent's channels away from their mean to saturate it.
+    let mean = (ar as f32 + ag as f32 + ab as f32) / 3.0;
+    let sat = |c: u8| (mean + (c as f32 - mean) * 3.0).clamp(0.0, 255.0);
+    let (sr, sg, sb) = (sat(ar), sat(ag), sat(ab));
+    let candidate = |t: f32| {
+        if dark_theme {
+            // Brightness grows with t, from about 0.25 to 0.45 of the accent.
+            let k = 0.25 + t * 0.5;
+            Color::Rgb(
+                (sr * k).round() as u8,
+                (sg * k).round() as u8,
+                (sb * k).round() as u8,
+            )
+        } else {
+            mix(t)
+        }
+    };
+    let dimmed_ok =
+        |c: Color| !matches!(dimmed, Color::Rgb(..)) || contrast_ratio(c, dimmed) >= 3.0;
+    let mut t = max_blend;
     while t > 0.0 {
-        let candidate = mix(t);
-        if contrast_ratio(candidate, text) >= 4.5 {
-            return candidate;
+        let c = candidate(t);
+        if contrast_ratio(c, text) >= 7.0 && dimmed_ok(c) {
+            return c;
         }
         t -= 0.05;
     }
@@ -3577,15 +3609,36 @@ mod focus_highlight_tests {
     fn focused_highlight_is_stronger_but_keeps_text_readable() {
         let base = Color::Rgb(42, 37, 58);
         let text = Color::Rgb(230, 224, 245);
-        let got = focused_highlight(base, Color::Rgb(255, 140, 200), text);
+        let got = focused_highlight(
+            base,
+            Color::Rgb(255, 140, 200),
+            text,
+            Color::Rgb(145, 137, 157),
+            0.40,
+        );
         assert_ne!(got, base);
         assert!(contrast_ratio(got, text) >= 4.5);
     }
 
     #[test]
+    fn night_sorbet_selection_keeps_dimmed_text_readable() {
+        let base = Color::Rgb(42, 37, 58);
+        let text = Color::Rgb(223, 214, 226);
+        let dimmed = Color::Rgb(145, 137, 157);
+        let accent = Color::Rgb(205, 180, 255);
+        for max in [0.20, 0.40] {
+            let got = focused_highlight(base, accent, text, dimmed, max);
+            println!("{max}: {got:?}");
+            assert_ne!(got, base);
+            assert!(contrast_ratio(got, text) >= 7.0);
+            assert!(contrast_ratio(got, dimmed) >= 3.0);
+        }
+    }
+
+    #[test]
     fn non_rgb_base_is_left_alone() {
         assert_eq!(
-            focused_highlight(Color::Reset, Color::Blue, Color::White),
+            focused_highlight(Color::Reset, Color::Blue, Color::White, Color::Gray, 0.40),
             Color::Reset
         );
     }
